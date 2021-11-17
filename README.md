@@ -14,6 +14,9 @@ python tools/amd_build/build_amd.py
 
 # Remove any existing git directories
 find . -type d -path *.git/* -exec rm -rf {} \;
+
+# Remove any github stuff
+find . -type d -name .github -exec rm -rf {} \;
 ```
 
 Finally, I added `nathan_build.sh` so I didn't need to look up the build flags
