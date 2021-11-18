@@ -7,7 +7,7 @@ how I obtained the initial version:
 ```
 git clone --recursive https://github.com/ROCmSoftwarePlatform/pytorch.git rocm_pytorch
 cd rocm_pytorch
-git checkout 69d39dcd8d3c5308f23b3426b18b7c938a943193
+git checkout -f --recurse-submodules 69d39dcd8d3c5308f23b3426b18b7c938a943193
 # If not already active:
 # conda activate
 python tools/amd_build/build_amd.py
