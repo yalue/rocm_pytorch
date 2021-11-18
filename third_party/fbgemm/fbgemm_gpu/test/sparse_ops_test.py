@@ -90,7 +90,7 @@ class SparseOpsTest(unittest.TestCase):
         long_index=st.booleans(),
         has_weight=st.booleans(),
     )
-    @settings(verbosity=Verbosity.verbose, max_examples=10, deadline=None)
+    @settings(verbosity=Verbosity.verbose, max_examples=20, deadline=None)
     def test_permute_indices(
         self, B: int, T: int, L: int, long_index: bool, has_weight: bool
     ) -> None:
@@ -157,7 +157,7 @@ class SparseOpsTest(unittest.TestCase):
         long_index=st.booleans(),
         has_weight=st.booleans(),
     )
-    @settings(verbosity=Verbosity.verbose, max_examples=10, deadline=None)
+    @settings(verbosity=Verbosity.verbose, max_examples=20, deadline=None)
     def test_permute_indices_with_repeats(
         self, B: int, T: int, L: int, long_index: bool, has_weight: bool
     ) -> None:
@@ -230,7 +230,7 @@ class SparseOpsTest(unittest.TestCase):
         long_index=st.booleans(),
         has_weight=st.booleans(),
     )
-    @settings(verbosity=Verbosity.verbose, max_examples=10, deadline=None)
+    @settings(verbosity=Verbosity.verbose, max_examples=20, deadline=None)
     def test_permute_indices_multi_dimension(
         self, D: int, B: int, T: int, L: int, long_index: bool, has_weight: bool
     ) -> None:
@@ -296,7 +296,7 @@ class SparseOpsTest(unittest.TestCase):
         L=st.integers(min_value=2, max_value=20),
         long_index=st.booleans(),
     )
-    @settings(verbosity=Verbosity.verbose, max_examples=10, deadline=None)
+    @settings(verbosity=Verbosity.verbose, max_examples=20, deadline=None)
     def test_permute_embeddings(self, B: int, T: int, L: int, long_index: bool) -> None:
         index_dtype = torch.int32 if long_index else torch.int32
         lengths = torch.randint(low=1, high=L, size=(T, B)).type(index_dtype)
@@ -435,12 +435,8 @@ class SparseOpsTest(unittest.TestCase):
     ) -> None:
         T = 4
         B = 2
-        # pyre-fixme[6]: Expected `Optional[Type[torch._dtype]]` for 2nd param but
-        #  got `Union[Type[np.int32], Type[np.int64]]`.
         lengths = torch.tensor([0, 2, 1, 3, 2, 3, 3, 1], dtype=offset_type)
         indices = torch.tensor(
-            # pyre-fixme[6]: Expected `Optional[Type[torch._dtype]]` for 2nd param
-            #  but got `Union[Type[np.int32], Type[np.int64]]`.
             [3, 4, 15, 11, 28, 29, 1, 10, 11, 12, 13, 11, 22, 20, 20], dtype=index_type
         )
         weights = (
@@ -462,26 +458,18 @@ class SparseOpsTest(unittest.TestCase):
                     14.0,
                     15.0,
                 ],
-                # pyre-fixme[6]: Expected `Optional[Type[torch._dtype]]` for 2nd
-                #  param but got `Type[float]`.
                 dtype=float,
             )
             if has_weight
             else None
         )
-        # pyre-fixme[6]: Expected `Optional[Type[torch._dtype]]` for 2nd param but
-        #  got `Union[Type[np.int32], Type[np.int64]]`.
         block_sizes = torch.tensor([5, 15, 10, 20], dtype=index_type)
         my_size = 2
 
         new_lengths_ref = torch.tensor(
-            # pyre-fixme[6]: Expected `Optional[Type[torch._dtype]]` for 2nd param
-            #  but got `Union[Type[np.int32], Type[np.int64]]`.
             [0, 2, 0, 1, 1, 0, 1, 0, 0, 0, 1, 2, 1, 3, 2, 1], dtype=index_type
         )
         new_indices_ref = torch.tensor(
-            # pyre-fixme[6]: Expected `Optional[Type[torch._dtype]]` for 2nd param
-            #  but got `Union[Type[np.int32], Type[np.int64]]`.
             [3, 4, 11, 1, 11, 0, 13, 14, 0, 1, 2, 3, 2, 0, 0], dtype=index_type
         )
         new_weights_ref = torch.tensor(
@@ -502,13 +490,9 @@ class SparseOpsTest(unittest.TestCase):
                 14.0,
                 15.0,
             ],
-            # pyre-fixme[6]: Expected `Optional[Type[torch._dtype]]` for 2nd param
-            #  but got `Type[float]`.
             dtype=float,
         )
         new_pos_ref = torch.tensor(
-            # pyre-fixme[6]: Expected `Optional[Type[torch._dtype]]` for 2nd param
-            #  but got `Union[Type[np.int32], Type[np.int64]]`.
             [0, 1, 0, 0, 0, 0, 1, 2, 1, 0, 1, 2, 1, 2, 0], dtype=index_type
         )
 

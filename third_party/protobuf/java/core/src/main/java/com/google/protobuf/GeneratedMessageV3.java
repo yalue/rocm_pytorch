@@ -515,7 +515,7 @@ public abstract class GeneratedMessageV3 extends AbstractMessage
    * TODO(xiaofeng): remove this after b/29368482 is fixed. We need to move this
    * interface to AbstractMessage in order to versioning GeneratedMessageV3 but
    * this move breaks binary compatibility for AppEngine. After AppEngine is
-   * fixed we can exclude this from google3.
+   * fixed we can exlude this from google3.
    */
   protected interface BuilderParent extends AbstractMessage.BuilderParent {}
 
@@ -1987,9 +1987,9 @@ public abstract class GeneratedMessageV3 extends AbstractMessage
 
         int oneofsSize = oneofs.length;
         for (int i = 0; i < oneofsSize; i++) {
-          oneofs[i] =
-              new OneofAccessor(
-                  descriptor, i, camelCaseNames[i + fieldsSize], messageClass, builderClass);
+          oneofs[i] = new OneofAccessor(
+              descriptor, camelCaseNames[i + fieldsSize],
+              messageClass, builderClass);
         }
         initialized = true;
         camelCaseNames = null;
@@ -2057,22 +2057,14 @@ public abstract class GeneratedMessageV3 extends AbstractMessage
     /** OneofAccessor provides access to a single oneof. */
     private static class OneofAccessor {
       OneofAccessor(
-          final Descriptor descriptor,
-          final int oneofIndex,
-          final String camelCaseName,
+          final Descriptor descriptor, final String camelCaseName,
           final Class<? extends GeneratedMessageV3> messageClass,
           final Class<? extends Builder> builderClass) {
         this.descriptor = descriptor;
-        OneofDescriptor oneofDescriptor = descriptor.getOneofs().get(oneofIndex);
-        if (oneofDescriptor.isSynthetic()) {
-          caseMethod = null;
-          caseMethodBuilder = null;
-          fieldDescriptor = oneofDescriptor.getFields().get(0);
-        } else {
-          caseMethod = getMethodOrDie(messageClass, "get" + camelCaseName + "Case");
-          caseMethodBuilder = getMethodOrDie(builderClass, "get" + camelCaseName + "Case");
-          fieldDescriptor = null;
-        }
+        caseMethod =
+            getMethodOrDie(messageClass, "get" + camelCaseName + "Case");
+        caseMethodBuilder =
+            getMethodOrDie(builderClass, "get" + camelCaseName + "Case");
         clearMethod = getMethodOrDie(builderClass, "clear" + camelCaseName);
       }
 
@@ -2080,51 +2072,33 @@ public abstract class GeneratedMessageV3 extends AbstractMessage
       private final Method caseMethod;
       private final Method caseMethodBuilder;
       private final Method clearMethod;
-      private final FieldDescriptor fieldDescriptor;
 
       public boolean has(final GeneratedMessageV3 message) {
-        if (fieldDescriptor != null) {
-          return message.hasField(fieldDescriptor);
-        } else {
-          if (((Internal.EnumLite) invokeOrDie(caseMethod, message)).getNumber() == 0) {
-            return false;
-          }
+        if (((Internal.EnumLite) invokeOrDie(caseMethod, message)).getNumber() == 0) {
+          return false;
         }
         return true;
       }
 
       public boolean has(GeneratedMessageV3.Builder builder) {
-        if (fieldDescriptor != null) {
-          return builder.hasField(fieldDescriptor);
-        } else {
-          if (((Internal.EnumLite) invokeOrDie(caseMethodBuilder, builder)).getNumber() == 0) {
-            return false;
-          }
+        if (((Internal.EnumLite) invokeOrDie(caseMethodBuilder, builder)).getNumber() == 0) {
+          return false;
         }
         return true;
       }
 
       public FieldDescriptor get(final GeneratedMessageV3 message) {
-        if (fieldDescriptor != null) {
-          return message.hasField(fieldDescriptor) ? fieldDescriptor : null;
-        } else {
-          int fieldNumber = ((Internal.EnumLite) invokeOrDie(caseMethod, message)).getNumber();
-          if (fieldNumber > 0) {
-            return descriptor.findFieldByNumber(fieldNumber);
-          }
+        int fieldNumber = ((Internal.EnumLite) invokeOrDie(caseMethod, message)).getNumber();
+        if (fieldNumber > 0) {
+          return descriptor.findFieldByNumber(fieldNumber);
         }
         return null;
       }
 
       public FieldDescriptor get(GeneratedMessageV3.Builder builder) {
-        if (fieldDescriptor != null) {
-          return builder.hasField(fieldDescriptor) ? fieldDescriptor : null;
-        } else {
-          int fieldNumber =
-              ((Internal.EnumLite) invokeOrDie(caseMethodBuilder, builder)).getNumber();
-          if (fieldNumber > 0) {
-            return descriptor.findFieldByNumber(fieldNumber);
-          }
+        int fieldNumber = ((Internal.EnumLite) invokeOrDie(caseMethodBuilder, builder)).getNumber();
+        if (fieldNumber > 0) {
+          return descriptor.findFieldByNumber(fieldNumber);
         }
         return null;
       }
@@ -2132,6 +2106,10 @@ public abstract class GeneratedMessageV3 extends AbstractMessage
       public void clear(final Builder builder) {
         invokeOrDie(clearMethod, builder);
       }
+    }
+
+    private static boolean supportFieldPresence(FileDescriptor file) {
+      return file.getSyntax() == FileDescriptor.Syntax.PROTO2;
     }
 
     // ---------------------------------------------------------------
@@ -2238,13 +2216,9 @@ public abstract class GeneratedMessageV3 extends AbstractMessage
           final Class<? extends GeneratedMessageV3> messageClass,
           final Class<? extends Builder> builderClass,
           final String containingOneofCamelCaseName) {
-        isOneofField =
-            descriptor.getContainingOneof() != null
-                && !descriptor.getContainingOneof().isSynthetic();
-        hasHasMethod =
-            descriptor.getFile().getSyntax() == FileDescriptor.Syntax.PROTO2
-                || descriptor.hasOptionalKeyword()
-                || (!isOneofField && descriptor.getJavaType() == FieldDescriptor.JavaType.MESSAGE);
+        isOneofField = descriptor.getContainingOneof() != null;
+        hasHasMethod = supportFieldPresence(descriptor.getFile())
+            || (!isOneofField && descriptor.getJavaType() == FieldDescriptor.JavaType.MESSAGE);
         ReflectionInvoker reflectionInvoker =
             new ReflectionInvoker(
                 descriptor,
@@ -3112,7 +3086,7 @@ public abstract class GeneratedMessageV3 extends AbstractMessage
       serializeMapTo(out, m, defaultEntry, fieldNumber);
       return;
     }
-    // Sorting the unboxed keys and then look up the values during serialization is 2x faster
+    // Sorting the unboxed keys and then look up the values during serialziation is 2x faster
     // than sorting map entries with a custom comparator directly.
     int[] keys = new int[m.size()];
     int index = 0;
@@ -3168,7 +3142,7 @@ public abstract class GeneratedMessageV3 extends AbstractMessage
       return;
     }
 
-    // Sorting the String keys and then look up the values during serialization is 25% faster than
+    // Sorting the String keys and then look up the values during serialziation is 25% faster than
     // sorting map entries with a custom comparator directly.
     String[] keys = new String[m.size()];
     keys = m.keySet().toArray(keys);

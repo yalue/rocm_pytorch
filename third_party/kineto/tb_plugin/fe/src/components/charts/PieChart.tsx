@@ -14,8 +14,6 @@ interface IProps {
   top?: number
   noLegend?: boolean
   title?: string
-  colors?: Array<string>
-  tooltip_mode?: string
 }
 
 const useStyles = makeStyles(() => ({
@@ -29,15 +27,7 @@ const normalArea = { left: '5%', width: '95%' }
 const noTitleArea = { left: '5%', width: '95%', top: '10%', height: '80%' }
 
 export const PieChart: React.FC<IProps> = (props) => {
-  const {
-    graph,
-    height = 300,
-    top,
-    noLegend,
-    title,
-    colors,
-    tooltip_mode = 'both'
-  } = props
+  const { graph, height = 300, top, noLegend, title } = props
   const classes = useStyles(props)
   const graphRef = React.useRef<HTMLDivElement>(null)
 
@@ -70,11 +60,10 @@ export const PieChart: React.FC<IProps> = (props) => {
       width: '100%',
       title,
       pieHole: 0.4,
-      tooltip: { trigger: 'selection', isHtml: true, text: tooltip_mode },
+      tooltip: { trigger: 'selection', isHtml: true },
       chartArea: noLegend ? noLegendArea : !title ? noTitleArea : normalArea,
       legend: noLegend ? 'none' : undefined,
-      sliceVisibilityThreshold: 0,
-      colors
+      sliceVisibilityThreshold: 0
     }
 
     const chart = new google.visualization.PieChart(element)

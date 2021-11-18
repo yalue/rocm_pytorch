@@ -20,17 +20,15 @@ class TopK_9_10 final : public Adapter {
       auto& data = t.int64s();
       data.emplace_back(node->i(kk));
       
-      Node* constant = graph->create(kConstant);
-      constant->insertBefore(node);
-      constant->t_(kvalue, t);        
-      node->addInput(constant->output());
+      Value* v = graph->addInitializerAndInput(t);
+      v->setSizes(std::vector<Dimension> {Dimension(1)});
+      node->addInput(v);
 
       node->removeAttribute(kk);
     }
 
-    Node* adapt(std::shared_ptr<Graph> graph, Node* node) const override {
+    void adapt(std::shared_ptr<Graph> graph, Node* node) const override {
       adapt_topk_9_10(graph, node);
-      return node;
     }
 };
 

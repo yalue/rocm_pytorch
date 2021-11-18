@@ -11,45 +11,6 @@
 
 namespace ONNX_NAMESPACE {
 
-inline int MathOpTwoIntegers(std::string op_type, int a, int b) {
-  if (op_type == "Add") {
-    return a + b;
-  } else if (op_type == "Sub") {
-    return a - b;
-  } else if (op_type == "Mul") {
-    return a * b;
-  }
-  fail_shape_inference("Wrong op_type name for running propagation: ", op_type);
-}
-
-inline void MathOpDataPropagator(DataPropagationContext& ctx, std::string op_type) {
-  const auto input_0 = ctx.getInputData(0);
-  const auto input_1 = ctx.getInputData(1);
-  if (input_0 == nullptr || input_1 == nullptr) {
-    return;
-  }
-  int size_0 = input_0->dim_size();
-  int size_1 = input_1->dim_size();
-  // Fails to broadcast if the ranks are different and no any rank is 1 
-  if (size_0 != size_1 && size_0 != 1 && size_1 != 1) {
-    fail_shape_inference("Invalid rank for ", op_type, " broadcasting: (",
-        size_0, ") vs (", size_1, ").");
-  }
-  TensorShapeProto tsp;
-  for (int i = 0; i < std::max(size_0, size_1); ++i) {
-    auto& input_dim_0 = input_0->dim(size_0 == 1 ? 0 : i);
-    auto& input_dim_1 = input_1->dim(size_1 == 1 ? 0 : i);
-    if (input_dim_0.has_dim_value() && input_dim_1.has_dim_value()) {
-      tsp.mutable_dim()->Add()->set_dim_value(
-          MathOpTwoIntegers(op_type, input_dim_0.dim_value(), input_dim_1.dim_value()));
-    } else {
-      // Cannot compute the value; simply add an empty dim without value and param
-      tsp.mutable_dim()->Add();
-    }
-  }
-  ctx.addOutputData(0, std::move(tsp));
-}
-
 std::function<void(OpSchema&)> MathDocGenerator(const char* name) {
   return [=](OpSchema& schema) {
     std::string doc;
@@ -115,8 +76,9 @@ The operator computes the {description} values for the given input:
 
  {equation}
 
-The "axis" attribute indicates the dimension along which {name}
-will be performed. The output tensor has the same shape
+The input does not need to explicitly be a 2D vector. The "axis" attribute
+indicates the dimension along which {name} will be performed.
+The output tensor has the same shape
 and contains the {name} values of the corresponding input.
 )DOC";
                         ReplaceAll(doc, "{name}", name);
@@ -126,7 +88,7 @@ and contains the {name} values of the corresponding input.
     POPULATE_OP_DOC_STR(axis_attr = R"DOC(
 Describes the dimension {name} will be performed on.
 Negative value means counting dimensions
-from the back. Accepted range is [-r, r-1] where r = rank(input).
+from the back. Accepted range is [-r, r-1] where r = rank(input).,
 )DOC";
                         ReplaceAll(axis_attr, "{name}", name););
     schema.SetDoc(doc);
@@ -135,7 +97,8 @@ from the back. Accepted range is [-r, r-1] where r = rank(input).
     schema.Input(
         0,
         "input",
-        "The input tensor of rank >= axis.",
+        "The input tensor that's coerced into a 2D matrix of size (NxD) "
+        "as described above.",
         "T",
         OpSchema::Single,
         true,
@@ -144,7 +107,8 @@ from the back. Accepted range is [-r, r-1] where r = rank(input).
     schema.Output(
         0,
         "output",
-        "The output values with the same shape as the input tensor.",
+        "The output values with the same "
+        "shape as input tensor (the original size without coercion).",
         "T",
         OpSchema::Single,
         true,
@@ -190,18 +154,12 @@ from the back. Accepted range is [-r, r-1] where r = rank(input).
 ONNX_OPERATOR_SET_SCHEMA(
     Add,
     14,
-    OpSchema().FillUsing(MathDocGenerator("addition"))
-    .PartialDataPropagationFunction([](DataPropagationContext& ctx) {
-        MathOpDataPropagator(ctx, "Add");
-    }));
+    OpSchema().FillUsing(MathDocGenerator("addition")));
 
 ONNX_OPERATOR_SET_SCHEMA(
     Sub,
     14,
-    OpSchema().FillUsing(MathDocGenerator("subtraction"))
-    .PartialDataPropagationFunction([](DataPropagationContext& ctx) {
-        MathOpDataPropagator(ctx, "Sub");
-    }));
+    OpSchema().FillUsing(MathDocGenerator("subtraction")));
 
 static const char* Mod_doc = R"DOC(
   Performs element-wise binary modulus (with Numpy-style broadcasting support).
@@ -269,10 +227,7 @@ ONNX_OPERATOR_SET_SCHEMA(
 ONNX_OPERATOR_SET_SCHEMA(
     Mul,
     14,
-    OpSchema().FillUsing(MathDocGenerator("multiplication"))
-    .PartialDataPropagationFunction([](DataPropagationContext& ctx) {
-        MathOpDataPropagator(ctx, "Mul");
-    }));
+    OpSchema().FillUsing(MathDocGenerator("multiplication")));
 
 ONNX_OPERATOR_SET_SCHEMA(
     Div,
@@ -715,12 +670,6 @@ TensorProto ToDimensionOneInt64Tensor(int64_t value) {
   return t;
 }
 
-TensorProto ToDimensionOneInt64Tensor(std::vector<int64_t> value) {
-  auto t = ToTensor(value);
-  t.add_dims(value.size());
-  return t;
-}
-
 bool BuildContextDependentFunctionBodyCelu(
     const FunctionBodyBuildContext& ctx,
     const OpSchema& schema,
@@ -892,7 +841,7 @@ ONNX_OPERATOR_SET_SCHEMA(
             "Constrain input and output types to float tensors.")
         .TypeAndShapeInferenceFunction(propagateShapeAndTypeFromFirstInput));
 
-static const char* Pow_ver15_doc = R"DOC(
+static const char* Pow_ver13_doc = R"DOC(
 Pow takes input data (Tensor<T>) and exponent Tensor, and
 produces one output data (Tensor<T>) where the function `f(x) = x^exponent`,
 is applied to the data tensor elementwise.
@@ -900,10 +849,10 @@ is applied to the data tensor elementwise.
 
 ONNX_OPERATOR_SET_SCHEMA(
     Pow,
-    15,
+    13,
     OpSchema()
         .SetDoc(GET_OP_DOC_STR(
-            std::string(Pow_ver15_doc) + GenerateBroadcastingDocMul()))
+            std::string(Pow_ver13_doc) + GenerateBroadcastingDocMul()))
         .Input(0,
             "X",
             "First operand, base of the exponent.",
@@ -949,8 +898,7 @@ ONNX_OPERATOR_SET_SCHEMA(
              "tensor(int64)",
              "tensor(float16)",
              "tensor(float)",
-             "tensor(double)",
-             "tensor(bfloat16)"},
+             "tensor(double)"},
             "Constrain input Y types to float/int tensors.")
         .TypeAndShapeInferenceFunction([](InferenceContext& ctx) {
           propagateElemTypeFromInputToOutput(ctx, 0, 0);
@@ -1117,12 +1065,13 @@ ONNX_OPERATOR_SET_SCHEMA(
             {"tensor(float16)", "tensor(float)", "tensor(double)"},
             "Constrain input and output types to float tensors.")
         .TypeAndShapeInferenceFunction(propagateShapeAndTypeFromFirstInput)
-        .FunctionBody(R"ONNX(
-          {
-            HS_X = HardSigmoid<alpha = 0.16666667163372, beta = 0.5>(X) 
-            Y = Mul (X, HS_X)
-          }
-        )ONNX"));
+        .FunctionBody(FunctionBodyHelper::BuildNodes({
+            // nodes: {outputs, op, inputs, attributes}
+            {{"HS_X"},
+             "HardSigmoid",
+             {"X"},
+             {MakeAttribute("alpha", 1.0f/6.0f), MakeAttribute("beta", 0.5f)}},
+            {{"Y"}, "Mul", {"X", "HS_X"}}})));
 
 // Generate opschema for element-wise ops. Leaves type constraint "T"
 // unspecified.
@@ -2387,15 +2336,12 @@ ONNX_OPERATOR_SET_SCHEMA(
 
 static const char* QLinearMatMul_ver10_doc = R"DOC(
 Matrix product that behaves like numpy.matmul: https://docs.scipy.org/doc/numpy-1.13.0/reference/generated/numpy.matmul.html.
-It consumes two quantized input tensors, their scales and zero points, scale and zero point of output, 
-and computes the quantized output. The quantization formula is y = saturate((x / y_scale) + y_zero_point). 
-For (x / y_scale), it is rounding to nearest ties to even. Refer to https://en.wikipedia.org/wiki/Rounding for details. 
-Scale and zero point must have same shape. They must be either scalar (per tensor) or N-D tensor 
-(per row for 'a' and per column for 'b'). Scalar refers to per tensor quantization whereas N-D refers to per row 
-or per column quantization. If the input is 2D of shape [M, K] then zero point and scale tensor may be 
-an M element vector [v_1, v_2, ..., v_M] for per row quantization and K element vector of shape [v_1, v_2, ..., v_K] 
-for per column quantization. If the input is N-D tensor with shape [D1, D2, M, K] then zero point and scale tensor may 
-have shape [D1, D2, M, 1] for per row quantization and shape [D1, D2, 1, K] for per column quantization.
+It consumes two quantized input tensors, their scales and zero points, scale and zero point of output, and computes the quantized output.
+The quantization formula is y = saturate((x / y_scale) + y_zero_point). For (x / y_scale), it is rounding to nearest ties to even.
+Refer to https://en.wikipedia.org/wiki/Rounding for details. Scale and zero point must have same shape.
+They must be either scalar (per tensor) or 1-D tensor (per row for 'a' and per column for 'b'). If scale and zero point are 1-D tensor,
+the number of elements of scale and zero point tensor of input 'a' and output 'y' should be equal to the number of rows of input 'a',
+and the number of elements of scale and zero point tensor of input 'b' should be equal to the number of columns of input 'b'.
 Production must never overflow, and accumulation may overflow if and only if in 32 bits.
 )DOC";
 
@@ -2559,10 +2505,9 @@ ONNX_OPERATOR_SET_SCHEMA(
         .Input(
             2,
             "a_zero_point",
-            "Zero point tensor for input 'A'. It's optional and default value is 0. It could be a scalar or N-D tensor. "
-            "Scalar refers to per tensor quantization whereas N-D refers to per row quantization. "
-            "If the input is 2D of shape [M, K] then zero point tensor may be an M element vector [zp_1, zp_2, ..., zp_M]. "
-            "If the input is N-D tensor with shape [D1, D2, M, K] then zero point tensor may have shape [D1, D2, M, 1]. ",
+            "Zero point tensor for input 'A'. It's optional and default value is 0. It could be a scalar or a 1-D tensor, "
+            "which means a per-tensor or per-row quantization. If it's a 1-D tensor, its number of elements "
+            "should be equal to the number of rows of input 'A'.",
             "T1",
             OpSchema::Optional,
             true,
@@ -2571,10 +2516,9 @@ ONNX_OPERATOR_SET_SCHEMA(
         .Input(
             3,
             "b_zero_point",
-            "Zero point tensor for input 'B'. It's optional and default value is 0. It could be a scalar or a N-D tensor, "
-            "Scalar refers to per tensor quantization whereas N-D refers to per col quantization. "
-            "If the input is 2D of shape [K, N] then zero point tensor may be an N element vector [zp_1, zp_2, ..., zp_N]. "
-            "If the input is N-D tensor with shape [D1, D2, K, N] then zero point tensor may have shape [D1, D2, 1, N]. ",
+            "Zero point tensor for input 'B'. It's optional and default value is 0.  It could be a scalar or a 1-D tensor, "
+            "which means a per-tensor or per-column quantization. If it's a 1-D tensor, its number "
+            "of elements should be equal to the number of columns of input 'B'.",
             "T2",
             OpSchema::Optional,
             true,
@@ -2904,16 +2848,7 @@ Example 3:
 bool BuildContextDependentFunctionBody(
     const FunctionBodyBuildContext& ctx,
     const OpSchema& schema,
-    FunctionProto& functionProto) {  
-  if (ctx.getInputType(0) == nullptr) {
-    // we cannot create a correct function body without knowing the input type
-    return false;
-  }
-  auto input_type = ctx.getInputType(0)->tensor_type().elem_type();
-  bool float_input = input_type == TensorProto_DataType_FLOAT;
-  auto reduction_attr_proto = ctx.getAttribute("reduction");
-  std::string reduction_attr =
-      reduction_attr_proto != nullptr && reduction_attr_proto->has_s() ? reduction_attr_proto->s() : "mean";
+    FunctionProto& functionProto) {
   std::vector<FunctionBodyHelper::NodeDef> body;
   body.push_back(
       {{"const_zero"},
@@ -2953,7 +2888,7 @@ bool BuildContextDependentFunctionBody(
          {"loss_NCdd", "const_zero", "const_one", "const_one"}});
 
     if (!ctx.hasInput(2)) {
-      if (reduction_attr == "none") {
+      if (ctx.getAttribute("reduction")->s() == "none") {
         body.push_back(
             {{"loss"},
              "Squeeze",
@@ -2963,7 +2898,7 @@ bool BuildContextDependentFunctionBody(
             {{"loss_Ndd"},
              "Squeeze",
              {"loss_N1dd", "axes"}});
-        if (reduction_attr == "mean") {
+        if (ctx.getAttribute("reduction")->s() == "mean") {
           body.push_back(
               {{"loss"},
                "ReduceMean",
@@ -2983,12 +2918,12 @@ bool BuildContextDependentFunctionBody(
           {{"loss_unweighted"},
            "Squeeze",
            {"loss_N1dd", "axes"}});
-      if (reduction_attr == "none") {
+      if (ctx.getAttribute("reduction")->s() == "none") {
         body.push_back({{"loss"}, "Mul", {"loss_unweighted", "weight_gather"}});
       } else {
         body.push_back(
             {{"loss_Ndd"}, "Mul", {"loss_unweighted", "weight_gather"}});
-        if (reduction_attr == "mean") {
+        if (ctx.getAttribute("reduction")->s() == "mean") {
           body.push_back(
               {{"loss_sum"},
                "ReduceSum",
@@ -3047,17 +2982,11 @@ bool BuildContextDependentFunctionBody(
          "Constant",
          {},
          {MakeAttribute("value", ToDimensionOneFloatTensor(0.0f))}});
-    if (!float_input) {
-      body.push_back(
-          {{"const_zero_casted"}, 
-          "Cast", 
-          {"const_zero_float"}, 
-          {MakeAttribute("to", static_cast<int64_t>(input_type))}});
-    }
+
     body.push_back(
         {{"input_gather_element_transform"},
          "Where",
-         {"mask", float_input ? "const_zero_float" : "const_zero_casted", "input_gather_element"}});
+         {"mask", "const_zero_float", "input_gather_element"}});
     body.push_back({{"loss_NCdd"}, "Neg", {"input_gather_element_transform"}});
     body.push_back(
         {{"loss_N1dd"},
@@ -3075,18 +3004,11 @@ bool BuildContextDependentFunctionBody(
            "Constant",
            {},
            {MakeAttribute("value", ToDimensionOneFloatTensor(1.0f))}});
-      if (!float_input) {
-        body.push_back(
-          {{"const_one_casted"}, 
-           "Cast", 
-           {"const_one_float"}, 
-           {MakeAttribute("to", static_cast<int64_t>(input_type))}});
-      }
+
       body.push_back(
           {{"weight_gather"},
            "Where",
-           {"squeeze_mask", float_input ? "const_zero_float" : "const_zero_casted", 
-           float_input ? "const_one_float" :"const_one_casted"}});
+           {"squeeze_mask", "const_zero_float", "const_one_float"}});
 
     } else {
       body.push_back(
@@ -3095,7 +3017,7 @@ bool BuildContextDependentFunctionBody(
       body.push_back(
           {{"weight_gather_temp_1"},
            "Where",
-           {"mask", float_input ? "const_zero_float" : "const_zero_casted", "weight_gather_temp"}});
+           {"mask", "const_zero_float", "weight_gather_temp"}});
 
       body.push_back(
           {{"weight_gather"},
@@ -3107,12 +3029,12 @@ bool BuildContextDependentFunctionBody(
         {{"loss_unweighted"},
          "Squeeze",
          {"loss_N1dd", "axes"}});
-    if (reduction_attr == "none") {
+    if (ctx.getAttribute("reduction")->s() == "none") {
       body.push_back({{"loss"}, "Mul", {"loss_unweighted", "weight_gather"}});
     } else {
       body.push_back(
           {{"loss_Ndd"}, "Mul", {"loss_unweighted", "weight_gather"}});
-      if (reduction_attr == "mean") {
+      if (ctx.getAttribute("reduction")->s() == "mean") {
         body.push_back(
             {{"loss_sum"},
              "ReduceSum",
@@ -3256,7 +3178,7 @@ ONNX_OPERATOR_SET_SCHEMA(
             TensorShapeProto* output_shape =
                 ctx.getOutputType(0)->mutable_tensor_type()->mutable_shape();
 
-            if (getAttribute(ctx, "reduction", "mean") == "none") {
+            if (ctx.getAttribute("reduction")->s() == "none") {
               // output tensor is of shape (N, d1, d2, ..., dk) if
               // reduction attribute is "none".
               for (int i = 0; i < input_rank - 1; i++) {
@@ -3488,39 +3410,23 @@ bool BuildContextDependentFunctionBodySCE(
     const OpSchema& schema,
     FunctionProto& functionProto) {
   std::vector<FunctionBodyHelper::NodeDef> body;
-  // Using stable implementation of LogSoftmax
   body.push_back(
-      {{"Shape3D"},
-        "Constant",
-        {},
-        {MakeAttribute("value", ToDimensionOneInt64Tensor({0,0,-1}))}});
+      {{"axes"},
+       "Constant",
+       {},
+       {MakeAttribute("value", ToDimensionOneInt64Tensor(1))}});
+
   body.push_back(
-      {{"X_NCD"},
-       "Reshape",
-       {"scores", "Shape3D"}});
-  body.push_back(
-      {{"X_NDC"},
-       "Transpose",
-       {"X_NCD"},
-       {MakeAttribute("perm", std::vector<int64_t>({0,2,1}))}});
-  body.push_back(
-      {{"X_LogSM"},
-       "LogSoftmax",
-       {"X_NDC"},
-       {MakeAttribute("axis", (int64_t)2)}});
-  body.push_back(
-      {{"X_LogSM_NCD"},
-       "Transpose",
-       {"X_LogSM"},
-       {MakeAttribute("perm", std::vector<int64_t>({0,2,1}))}});
-  body.push_back(
-      {{"X_shape"},
-       "Shape",
-       {"scores"}});
-  body.push_back(
-      {{"X_Log"},
-       "Reshape",
-       {"X_LogSM_NCD", "X_shape"}});
+      {{"X_Max"},
+       "ReduceMax",
+       {"scores"},
+       {MakeAttribute("axes", std::vector<int64_t>({1}))}});
+
+  body.push_back({{"X_Sub"}, "Sub", {"scores", "X_Max"}});
+  body.push_back({{"X_Exp"}, "Exp", {"X_Sub"}});
+  body.push_back({{"X_RS"}, "ReduceSum", {"X_Exp", "axes"}});
+  body.push_back({{"X_Div"}, "Div", {"X_Exp", "X_RS"}});
+  body.push_back({{"X_Log"}, "Log", {"X_Div"}});
 
   // Review(mzs): Ideally we want to reuse the output from Log for sub-graph
   // output as well but looking at the graph resolve code it does not include

@@ -23,7 +23,6 @@
 #include <tensorpipe/common/ringbuffer_role.h>
 #include <tensorpipe/common/socket.h>
 #include <tensorpipe/transport/error.h>
-#include <tensorpipe/transport/ibv/constants.h>
 #include <tensorpipe/transport/ibv/context_impl.h>
 #include <tensorpipe/transport/ibv/error.h>
 #include <tensorpipe/transport/ibv/reactor.h>
@@ -34,6 +33,15 @@ namespace transport {
 namespace ibv {
 
 namespace {
+
+// When the connection gets closed, to avoid leaks, it needs to "reclaim" all
+// the work requests that it had posted, by waiting for their completion. They
+// may however complete with error, which makes it harder to identify and
+// distinguish them from failing incoming requests because, in principle, we
+// cannot access the opcode field of a failed work completion. Therefore, we
+// assign a special ID to those types of requests, to match them later on.
+constexpr uint64_t kWriteRequestId = 1;
+constexpr uint64_t kAckRequestId = 2;
 
 // The data that each queue pair endpoint needs to send to the other endpoint in
 // order to set up the queue pair itself. This data is transferred over a TCP
@@ -135,7 +143,7 @@ void ConnectionImpl::initImplFromLoop() {
     initAttr.qp_type = IbvLib::QPT_RC;
     initAttr.send_cq = context_->getReactor().getIbvCq().get();
     initAttr.recv_cq = context_->getReactor().getIbvCq().get();
-    initAttr.cap.max_send_wr = kSendQueueSize;
+    initAttr.cap.max_send_wr = kNumPendingWriteReqs;
     initAttr.cap.max_send_sge = 1;
     initAttr.srq = context_->getReactor().getIbvSrq().get();
     initAttr.sq_sig_all = 1;
@@ -346,13 +354,16 @@ void ConnectionImpl::processReadOperationsFromLoop() {
     RingbufferReadOperation& readOperation = readOperations_.front();
     ssize_t len = readOperation.handleRead(inboxConsumer);
     if (len > 0) {
-      Reactor::AckInfo info;
-      info.length = len;
+      IbvLib::send_wr wr;
+      std::memset(&wr, 0, sizeof(wr));
+      wr.wr_id = kAckRequestId;
+      wr.opcode = IbvLib::WR_SEND_WITH_IMM;
+      wr.imm_data = len;
 
       TP_VLOG(9) << "Connection " << id_
-                 << " is posting a send request (acknowledging " << info.length
+                 << " is posting a send request (acknowledging " << wr.imm_data
                  << " bytes) on QP " << qp_->qp_num;
-      context_->getReactor().postAck(qp_, info);
+      context_->getReactor().postAck(qp_, wr);
       numAcksInFlight_++;
     }
     if (readOperation.completed()) {
@@ -389,21 +400,28 @@ void ConnectionImpl::processWriteOperationsFromLoop() {
       TP_THROW_SYSTEM_IF(numBuffers < 0, -numBuffers);
 
       for (int bufferIdx = 0; bufferIdx < numBuffers; bufferIdx++) {
-        Reactor::WriteInfo info;
-        info.addr = buffers[bufferIdx].ptr;
-        info.length = buffers[bufferIdx].len;
-        info.lkey = outboxMr_->lkey;
+        IbvLib::sge list;
+        list.addr = reinterpret_cast<uint64_t>(buffers[bufferIdx].ptr);
+        list.length = buffers[bufferIdx].len;
+        list.lkey = outboxMr_->lkey;
 
         uint64_t peerInboxOffset = peerInboxHead_ & (kBufferSize - 1);
         peerInboxHead_ += buffers[bufferIdx].len;
 
-        info.remoteAddr = peerInboxPtr_ + peerInboxOffset;
-        info.rkey = peerInboxKey_;
+        IbvLib::send_wr wr;
+        std::memset(&wr, 0, sizeof(wr));
+        wr.wr_id = kWriteRequestId;
+        wr.sg_list = &list;
+        wr.num_sge = 1;
+        wr.opcode = IbvLib::WR_RDMA_WRITE_WITH_IMM;
+        wr.imm_data = buffers[bufferIdx].len;
+        wr.wr.rdma.remote_addr = peerInboxPtr_ + peerInboxOffset;
+        wr.wr.rdma.rkey = peerInboxKey_;
 
         TP_VLOG(9) << "Connection " << id_
                    << " is posting a RDMA write request (transmitting "
-                   << info.length << " bytes) on QP " << qp_->qp_num;
-        context_->getReactor().postWrite(qp_, info);
+                   << wr.imm_data << " bytes) on QP " << qp_->qp_num;
+        context_->getReactor().postWrite(qp_, wr);
         numWritesInFlight_++;
       }
 

@@ -251,7 +251,7 @@ std::unordered_map<
  */
 void fbgemmForceIsa(inst_set_t isa) {
   g_forced_isa = isa;
-}
+};
 
 /**
  * @brief Enables AVX512-256 if appriate. Inteded for Skylake based Xeon-D
@@ -261,7 +261,7 @@ void fbgemmForceIsa(inst_set_t isa) {
  */
 void fbgemmEnableAvx512Ymm(bool flag) {
   g_Avx512_Ymm_enabled = flag;
-}
+};
 
 /**
  * @brief Determine the best available x86 machine ISA to be used for
@@ -279,28 +279,28 @@ inst_set_t fbgemmInstructionSet() {
   inst_set_t forced_isa =
       g_forced_isa != inst_set_t::anyarch ? g_forced_isa : env_forced_isa;
   static const inst_set_t detected_isa = ([]() {
-    inst_set_t isa = inst_set_t::anyarch;
+    inst_set_t detected_isa = inst_set_t::anyarch;
     // Check environment
     if (cpuinfo_initialize()) {
       const bool isXeonD =
         fbgemmIsIntelXeonD() && (g_Avx512_Ymm_enabled || isAvx512_Ymm_enabled);
       if (fbgemmHasAvx512VnniSupport()) {
         if (isXeonD) {
-          isa = inst_set_t::avx512_vnni_ymm;
+          detected_isa = inst_set_t::avx512_vnni_ymm;
         } else {
-          isa = inst_set_t::avx512_vnni;
+          detected_isa = inst_set_t::avx512_vnni;
         }
       } else if (auto const hasAVX512 = fbgemmHasAvx512Support()) {
         if (isXeonD) {
-          isa = inst_set_t::avx512_ymm;
+          detected_isa = inst_set_t::avx512_ymm;
         } else {
-          isa = inst_set_t::avx512;
+          detected_isa = inst_set_t::avx512;
         }
       } else if (fbgemmHasAvx2Support()) {
-        isa = inst_set_t::avx2;
+        detected_isa = inst_set_t::avx2;
       }
     }
-    return isa;
+    return detected_isa;
   })();
 
   if (forced_isa == inst_set_t::anyarch) {

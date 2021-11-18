@@ -508,7 +508,7 @@ void ImmutableMapFieldLiteGenerator::GenerateFieldInfo(
   printer->Print(variables_,
                  "\"$name$_\",\n"
                  "$default_entry$,\n");
-  if (!SupportUnknownEnumValue(descriptor_) &&
+  if (SupportFieldPresence(descriptor_->file()) &&
       GetJavaType(ValueField(descriptor_)) == JAVATYPE_ENUM) {
     PrintEnumVerifierLogic(printer, ValueField(descriptor_), variables_,
                            /*var_name=*/"$value_enum_type$",

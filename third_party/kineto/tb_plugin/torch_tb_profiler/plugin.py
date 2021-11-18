@@ -4,6 +4,7 @@
 import atexit
 import gzip
 import json
+import multiprocessing as mp
 import os
 import sys
 import tempfile
@@ -13,8 +14,9 @@ from collections import OrderedDict
 from queue import Queue
 
 import werkzeug
+from tensorboard import errors
 from tensorboard.plugins import base_plugin
-from werkzeug import exceptions, wrappers
+from werkzeug import wrappers
 
 from . import consts, io, utils
 from .profiler import RunLoader
@@ -22,14 +24,6 @@ from .run import DistributedRunProfile, Run, RunProfile
 
 logger = utils.get_logger()
 
-def decorate_headers(func):
-    def wrapper(*args, **kwargs):
-        headers = func(*args, **kwargs)
-        headers.extend(TorchProfilerPlugin.headers)
-        return headers
-    return wrapper
-
-exceptions.HTTPException.get_headers = decorate_headers(exceptions.HTTPException.get_headers)
 
 class TorchProfilerPlugin(base_plugin.TBPlugin):
     """TensorBoard plugin for Torch Profiler."""
@@ -43,10 +37,13 @@ class TorchProfilerPlugin(base_plugin.TBPlugin):
           context: A base_plugin.TBContext instance.
         """
         super(TorchProfilerPlugin, self).__init__(context)
+        start_method = os.getenv('TORCH_PROFILER_START_METHOD')
+        if start_method:
+            mp.set_start_method(start_method, force=True)
         self.logdir = io.abspath(context.logdir.rstrip('/'))
 
-        self._load_lock = threading.Lock()
-        self._load_threads = []
+        self._is_active = None
+        self._is_active_initialized_event = threading.Event()
 
         self._runs = OrderedDict()
         self._runs_lock = threading.Lock()
@@ -72,7 +69,8 @@ class TorchProfilerPlugin(base_plugin.TBPlugin):
     def is_active(self):
         """Returns whether there is relevant data for the plugin to process.
         """
-        return True
+        self._is_active_initialized_event.wait()
+        return self._is_active
 
     def get_plugin_apps(self):
         return {
@@ -90,33 +88,22 @@ class TorchProfilerPlugin(base_plugin.TBPlugin):
             "/operation/stack": self.operation_stack_route,
             "/kernel": self.kernel_pie_route,
             "/kernel/table": self.kernel_table_route,
-            "/kernel/tc_pie": self.kernel_tc_route,
             "/trace": self.trace_route,
             "/distributed/gpuinfo": self.dist_gpu_info_route,
             "/distributed/overlap": self.comm_overlap_route,
             "/distributed/waittime": self.comm_wait_route,
             "/distributed/commops": self.comm_ops_route,
             "/memory": self.memory_route,
-            "/memory_curve": self.memory_curve_route,
-            "/memory_events": self.memory_events_route,
         }
 
     def frontend_metadata(self):
-        return base_plugin.FrontendMetadata(es_module_path="/index.js", disable_reload=True)
+        return base_plugin.FrontendMetadata(es_module_path="/index.js")
 
     @wrappers.Request.application
     def runs_route(self, request):
         with self._runs_lock:
             names = list(self._runs.keys())
-
-        with self._load_lock:
-            loading = bool(self._load_threads)
-
-        data = {
-            "runs": names,
-            "loading": loading
-        }
-        return self.respond_as_json(data)
+        return self.respond_as_json(names)
 
     @wrappers.Request.application
     def views_route(self, request):
@@ -136,6 +123,7 @@ class TorchProfilerPlugin(base_plugin.TBPlugin):
         self._validate(run=name, view=view)
         run = self._get_run(name)
         self._check_run(run, name)
+        workers = run.get_workers(view)
         return self.respond_as_json(run.get_workers(view))
 
     @wrappers.Request.application
@@ -219,12 +207,6 @@ class TorchProfilerPlugin(base_plugin.TBPlugin):
             return self.respond_as_json(profile.kernel_op_table)
 
     @wrappers.Request.application
-    def kernel_tc_route(self, request):
-        profile = self._get_profile_for_request(request)
-
-        return self.respond_as_json(profile.tc_pie)
-
-    @wrappers.Request.application
     def trace_route(self, request):
         profile = self._get_profile_for_request(request)
 
@@ -277,36 +259,7 @@ class TorchProfilerPlugin(base_plugin.TBPlugin):
     @wrappers.Request.application
     def memory_route(self, request):
         profile = self._get_profile_for_request(request)
-        start_ts = request.args.get("start_ts", None)
-        end_ts = request.args.get("end_ts", None)
-        memory_metric = request.args.get("memory_metric", "KB")
-        if start_ts is not None:
-            start_ts = int(start_ts)
-        if end_ts is not None:
-            end_ts = int(end_ts)
-
-        return self.respond_as_json(RunProfile.get_memory_stats(profile, start_ts=start_ts, end_ts=end_ts, memory_metric=memory_metric))
-
-    @wrappers.Request.application
-    def memory_curve_route(self, request):
-        profile = self._get_profile_for_request(request)
-        time_metric = request.args.get("time_metric", "ms")
-        memory_metric = request.args.get("memory_metric", "MB")
-        return self.respond_as_json(RunProfile.get_memory_curve(profile, time_metric=time_metric, memory_metric=memory_metric))
-
-    @wrappers.Request.application
-    def memory_events_route(self, request):
-        profile = self._get_profile_for_request(request)
-        start_ts = request.args.get("start_ts", None)
-        end_ts = request.args.get("end_ts", None)
-        time_metric = request.args.get("time_metric", "ms")
-        memory_metric = request.args.get("memory_metric", "KB")
-        if start_ts is not None:
-            start_ts = int(start_ts)
-        if end_ts is not None:
-            end_ts = int(end_ts)
-
-        return self.respond_as_json(RunProfile.get_memory_events(profile, start_ts, end_ts, time_metric=time_metric, memory_metric=memory_metric))
+        return self.respond_as_json(profile.memory_view)
 
     @wrappers.Request.application
     def static_file_route(self, request):
@@ -325,7 +278,7 @@ class TorchProfilerPlugin(base_plugin.TBPlugin):
             with open(filepath, 'rb') as infile:
                 contents = infile.read()
         except IOError:
-            raise exceptions.NotFound("404 Not Found")
+            raise errors.NotFoundError("404 Not Found")
         return werkzeug.Response(
             contents, content_type=mimetype, headers=TorchProfilerPlugin.headers
         )
@@ -345,22 +298,19 @@ class TorchProfilerPlugin(base_plugin.TBPlugin):
                     logger.debug("Scan run dir")
                     run_dirs = self._get_run_dirs()
 
-                    has_dir = False
                     # Assume no deletion on run directories, trigger async load if find a new run
                     for run_dir in run_dirs:
-                        has_dir = True
+                        # Set _is_active quickly based on file pattern match, don't wait for data loading
+                        if not self._is_active:
+                            self._is_active = True
+                            self._is_active_initialized_event.set()
+
                         if run_dir not in touched:
                             touched.add(run_dir)
                             logger.info("Find run directory %s", run_dir)
                             # Use threading to avoid UI stall and reduce data parsing time
                             t = threading.Thread(target=self._load_run, args=(run_dir,))
                             t.start()
-                            with self._load_lock:
-                                self._load_threads.append(t)
-
-                    if not has_dir:
-                        # handle directory removed case.
-                        self._runs.clear()
                 except Exception as ex:
                     logger.warning("Failed to scan runs. Exception=%s", ex, exc_info=True)
 
@@ -380,6 +330,11 @@ class TorchProfilerPlugin(base_plugin.TBPlugin):
                 self._runs[run.name] = run
                 if is_new:
                     self._runs = OrderedDict(sorted(self._runs.items()))
+
+                # Update is_active
+                if not self._is_active:
+                    self._is_active = True
+                    self._is_active_initialized_event.set()
 
     def _get_run_dirs(self):
         """Scan logdir, find PyTorch Profiler run directories.
@@ -408,13 +363,6 @@ class TorchProfilerPlugin(base_plugin.TBPlugin):
             self._queue.put(run)
         except Exception as ex:
             logger.warning("Failed to load run %s. Exception=%s", ex, name, exc_info=True)
-
-        t = threading.current_thread()
-        with self._load_lock:
-            try:
-                self._load_threads.remove(t)
-            except ValueError:
-                logger.warning("could not find the thread {}".format(run_dir))
 
     def _get_run(self, name) -> Run:
         with self._runs_lock:
@@ -448,22 +396,23 @@ class TorchProfilerPlugin(base_plugin.TBPlugin):
         self._check_run(run, name)
         profile = run.get_profile(worker, span)
         if profile is None:
-            raise exceptions.NotFound("could not find the profile for %s/%s/%s " %(name, worker, span))
+            raise errors.NotFoundError("could not find the profile for %s/%s " %(name, worker))
         return profile
 
     def _check_run(self, run, name):
         if run is None:
-            raise exceptions.NotFound("could not find the run for %s" %(name))
+            raise errors.NotFoundError("could not find the run for %s" %(name))
 
     def _check_normal_profile(self, profile, name, worker):
         if not isinstance(profile, RunProfile):
-            raise exceptions.BadRequest("Get an unexpected profile type %s for %s/%s" %(type(profile), name, worker))
+            raise errors.InvalidArgumentError("Get an unexpected profile type %s for %s/%s" %(type(profile), name, worker))
 
     def _check_distributed_profile(self, profile, name):
         if not isinstance(profile, DistributedRunProfile):
-            raise exceptions.BadRequest("Get an unexpected distributed profile type %s for %s" %(type(profile), name))
+            raise errors.InvalidArgumentError("Get an unexpected distributed profile type %s for %s/%s" %(type(profile), name))
 
     def _validate(self, **kwargs):
         for name,v in kwargs.items():
             if v is None:
-                raise exceptions.BadRequest("Must specify %s in request url" %(name))
+                raise errors.InvalidArgumentError("Must specify %s in request url" %(name))
+

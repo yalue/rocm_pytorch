@@ -38,7 +38,6 @@ constexpr int kDefaultActivitiesExternalAPINetSizeThreshold(0);
 constexpr int kDefaultActivitiesExternalAPIGpuOpCountThreshold(0);
 constexpr int kDefaultActivitiesMaxGpuBufferSize(128 * 1024 * 1024);
 constexpr seconds kDefaultActivitiesWarmupDurationSecs(5);
-constexpr seconds kDefaultBufferUntilWarmup(10);
 constexpr seconds kDefaultReportPeriodSecs(1);
 constexpr int kDefaultSamplesPerReport(1);
 constexpr int kDefaultMaxEventProfilersPerGpu(1);
@@ -46,32 +45,33 @@ constexpr int kDefaultEventProfilerHearbeatMonitorPeriod(0);
 constexpr seconds kMaxRequestAge(10);
 
 // Event Profiler
-constexpr char kEventsKey[] = "EVENTS";
-constexpr char kMetricsKey[] = "METRICS";
-constexpr char kSamplePeriodKey[] = "SAMPLE_PERIOD_MSECS";
-constexpr char kMultiplexPeriodKey[] = "MULTIPLEX_PERIOD_MSECS";
-constexpr char kReportPeriodKey[] = "REPORT_PERIOD_SECS";
-constexpr char kSamplesPerReportKey[] = "SAMPLES_PER_REPORT";
-constexpr char kEventsLogFileKey[] = "EVENTS_LOG_FILE";
-constexpr char kEventsEnabledDevicesKey[] = "EVENTS_ENABLED_DEVICES";
-constexpr char kOnDemandDurationKey[] = "EVENTS_DURATION_SECS";
-constexpr char kMaxEventProfilersPerGpuKey[] = "MAX_EVENT_PROFILERS_PER_GPU";
-constexpr char kHeartbeatMonitorPeriodKey[] =
+const string kEventsKey = "EVENTS";
+const string kMetricsKey = "METRICS";
+const string kSamplePeriodKey = "SAMPLE_PERIOD_MSECS";
+const string kMultiplexPeriodKey = "MULTIPLEX_PERIOD_MSECS";
+const string kReportPeriodKey = "REPORT_PERIOD_SECS";
+const string kSamplesPerReportKey = "SAMPLES_PER_REPORT";
+const string kEventsLogFileKey = "EVENTS_LOG_FILE";
+const string kEventsEnabledDevicesKey = "EVENTS_ENABLED_DEVICES";
+const string kOnDemandDurationKey = "EVENTS_DURATION_SECS";
+const string kMaxEventProfilersPerGpuKey = "MAX_EVENT_PROFILERS_PER_GPU";
+const string kHeartbeatMonitorPeriodKey =
     "EVENTS_HEARTBEAT_MONITOR_PERIOD_SECS";
 
 // Activity Profiler
-constexpr char kActivitiesEnabledKey[] = "ACTIVITIES_ENABLED";
-constexpr char kActivityTypesKey[] = "ACTIVITY_TYPES";
-constexpr char kActivitiesLogFileKey[] = "ACTIVITIES_LOG_FILE";
-constexpr char kActivitiesDurationKey[] = "ACTIVITIES_DURATION_SECS";
-constexpr char kActivitiesDurationMsecsKey[] = "ACTIVITIES_DURATION_MSECS";
-constexpr char kActivitiesIterationsKey[] = "ACTIVITIES_ITERATIONS";
-constexpr char kActivitiesIterationsTargetKey[] = "ACTIVITIES_ITERATIONS_TARGET";
-constexpr char kActivitiesNetFilterKey[] = "ACTIVITIES_NET_FILTER";
-constexpr char kActivitiesMinNetSizeKey[] = "ACTIVITIES_MIN_NET_SIZE";
-constexpr char kActivitiesMinGpuOpCountKey[] = "ACTIVITIES_MIN_GPU_OP_COUNT";
-constexpr char kActivitiesWarmupDurationSecsKey[] = "ACTIVITIES_WARMUP_PERIOD_SECS";
-constexpr char kActivitiesMaxGpuBufferSizeKey[] =
+const string kActivitiesEnabledKey = "ACTIVITIES_ENABLED";
+const string kActivityTypesKey = "ACTIVITY_TYPES";
+const string kActivitiesLogFileKey = "ACTIVITIES_LOG_FILE";
+const string kActivitiesLogUrlKey = "ACTIVITIES_LOG_URL";
+const string kActivitiesDurationKey = "ACTIVITIES_DURATION_SECS";
+const string kActivitiesDurationMsecsKey = "ACTIVITIES_DURATION_MSECS";
+const string kActivitiesIterationsKey = "ACTIVITIES_ITERATIONS";
+const string kActivitiesIterationsTargetKey = "ACTIVITIES_ITERATIONS_TARGET";
+const string kActivitiesNetFilterKey = "ACTIVITIES_NET_FILTER";
+const string kActivitiesMinNetSizeKey = "ACTIVITIES_MIN_NET_SIZE";
+const string kActivitiesMinGpuOpCountKey = "ACTIVITIES_MIN_GPU_OP_COUNT";
+const string kActivitiesWarmupDurationSecsKey = "ACTIVITIES_WARMUP_PERIOD_SECS";
+const string kActivitiesMaxGpuBufferSizeKey =
     "ACTIVITIES_MAX_GPU_BUFFER_SIZE_MB";
 
 // Common
@@ -79,37 +79,33 @@ constexpr char kActivitiesMaxGpuBufferSizeKey[] =
 // Client-side timestamp used for synchronized start across hosts for
 // distributed workloads.
 // Specified in milliseconds Unix time (milliseconds since epoch).
-// To use, compute a future timestamp as follows:
-//    * C++: <delay_ms> + duration_cast<milliseconds>(
+// To use, take a timestamp at request time as follows:
+//    * C++: duration_cast<milliseconds>(
 //               system_clock::now().time_since_epoch()).count()
-//    * Python: <delay_ms> + int(time.time() * 1000)
-//    * Bash: $((<delay_ms> + $(date +%s%3N)))
-// If used for a tracing request, timestamp must be far enough in the future
-// to accommodate ACTIVITIES_WARMUP_PERIOD_SECS as well as any delays in
-// propagating the request to the profiler.
-// If the request can not be honored, it is up to the profilers to report
-// an error somehow - no checks are done at config parse time.
-constexpr char kProfileStartTimeKey[] = "PROFILE_START_TIME";
-// DEPRECATED - USE PROFILE_START_TIME instead
-constexpr char kRequestTimestampKey[] = "REQUEST_TIMESTAMP";
+//    * Python: int(time.time() * 1000)
+//    * Bash: date +%s%3N
+const string kRequestTimestampKey = "REQUEST_TIMESTAMP";
 
 // Enable on-demand trigger via kill -USR2 <pid>
 // When triggered in this way, /tmp/libkineto.conf will be used as config.
-constexpr char kEnableSigUsr2Key[] = "ENABLE_SIGUSR2";
+const string kEnableSigUsr2Key = "ENABLE_SIGUSR2";
 
 // Enable communication through IPC Fabric
 // and disable thrift communication with dynolog daemon
-constexpr char kEnableIpcFabricKey[] = "ENABLE_IPC_FABRIC";
+const string kEnableIpcFabricKey = "ENABLE_IPC_FABRIC";
 
 // Verbose log level
 // The actual glog is not used and --v and --vmodule has no effect.
 // Instead set the verbose level and modules in the config file.
-constexpr char kLogVerboseLevelKey[] = "VERBOSE_LOG_LEVEL";
+const string kLogVerboseLevelKey = "VERBOSE_LOG_LEVEL";
 // By default, all modules will log verbose messages >= verboseLogLevel.
 // But to reduce noise we can specify one or more modules of interest.
 // A module is a C/C++ object file (source file name),
 // Example argument: ActivityProfiler.cpp,output_json.cpp
-constexpr char kLogVerboseModulesKey[] = "VERBOSE_LOG_MODULES";
+const string kLogVerboseModulesKey = "VERBOSE_LOG_MODULES";
+
+const string kConfigFileEnvVar = "KINETO_CONFIG";
+const string kConfigFile = "/etc/libkineto.conf";
 
 // Max devices supported on any system
 constexpr uint8_t kMaxDevices = 8;
@@ -176,7 +172,6 @@ Config::Config()
       multiplexPeriod_(kDefaultMultiplexPeriodMsecs),
       activityProfilerEnabled_(true),
       activitiesLogFile_(defaultTraceFileName()),
-      activitiesLogUrl_(fmt::format("file://{}", activitiesLogFile_)),
       activitiesMaxGpuBufferSize_(kDefaultActivitiesMaxGpuBufferSize),
       activitiesWarmupDuration_(kDefaultActivitiesWarmupDurationSecs),
       activitiesOnDemandDuration_(kDefaultActivitiesProfileDurationMSecs),
@@ -186,9 +181,8 @@ Config::Config()
       activitiesExternalAPIGpuOpCountThreshold_(
           kDefaultActivitiesExternalAPIGpuOpCountThreshold),
       activitiesOnDemandTimestamp_(milliseconds(0)),
-      profileStartTime_(milliseconds(0)),
       requestTimestamp_(milliseconds(0)),
-      enableSigUsr2_(false),
+      enableSigUsr2_(true),
       enableIpcFabric_(false) {
   auto factories = configFactories();
   if (factories) {
@@ -208,7 +202,7 @@ const seconds Config::maxRequestAge() const {
   return kMaxRequestAge;
 }
 
-static std::string getTimeStr(time_point<system_clock> t) {
+std::string getTimeStr(time_point<system_clock> t) {
   std::time_t t_c = system_clock::to_time_t(t);
   return fmt::format("{:%H:%M:%S}", fmt::localtime(t_c));
 }
@@ -246,83 +240,77 @@ void Config::setActivityTypes(
 
 bool Config::handleOption(const std::string& name, std::string& val) {
   // Event Profiler
-  if (!name.compare(kEventsKey)) {
+  if (name == kEventsKey) {
     vector<string> event_names = splitAndTrim(val, ',');
     eventNames_.insert(event_names.begin(), event_names.end());
-  } else if (!name.compare(kMetricsKey)) {
+  } else if (name == kMetricsKey) {
     vector<string> metric_names = splitAndTrim(val, ',');
     metricNames_.insert(metric_names.begin(), metric_names.end());
-  } else if (!name.compare(kSamplePeriodKey)) {
+  } else if (name == kSamplePeriodKey) {
     samplePeriod_ = milliseconds(toInt32(val));
-  } else if (!name.compare(kMultiplexPeriodKey)) {
+  } else if (name == kMultiplexPeriodKey) {
     multiplexPeriod_ = milliseconds(toInt32(val));
-  } else if (!name.compare(kReportPeriodKey)) {
+  } else if (name == kReportPeriodKey) {
     setReportPeriod(seconds(toInt32(val)));
-  } else if (!name.compare(kSamplesPerReportKey)) {
+  } else if (name == kSamplesPerReportKey) {
     samplesPerReport_ = toInt32(val);
-  } else if (!name.compare(kEventsLogFileKey)) {
+  } else if (name == kEventsLogFileKey) {
     eventLogFile_ = val;
-  } else if (!name.compare(kEventsEnabledDevicesKey)) {
+  } else if (name == kEventsEnabledDevicesKey) {
     eventProfilerDeviceMask_ = createDeviceMask(val);
-  } else if (!name.compare(kOnDemandDurationKey)) {
+  } else if (name == kOnDemandDurationKey) {
     eventProfilerOnDemandDuration_ = seconds(toInt32(val));
     eventProfilerOnDemandTimestamp_ = timestamp();
-  } else if (!name.compare(kMaxEventProfilersPerGpuKey)) {
+  } else if (name == kMaxEventProfilersPerGpuKey) {
     eventProfilerMaxInstancesPerGpu_ = toInt32(val);
-  } else if (!name.compare(kHeartbeatMonitorPeriodKey)) {
+  } else if (name == kHeartbeatMonitorPeriodKey) {
     eventProfilerHeartbeatMonitorPeriod_ = seconds(toInt32(val));
   }
 
   // Activity Profiler
-  else if (!name.compare(kActivitiesDurationKey)) {
+  else if (name == kActivitiesDurationKey) {
     activitiesOnDemandDuration_ =
         duration_cast<milliseconds>(seconds(toInt32(val)));
     activitiesOnDemandTimestamp_ = timestamp();
-  } else if (!name.compare(kActivityTypesKey)) {
+  } else if (name == kActivityTypesKey) {
     vector<string> activity_types = splitAndTrim(toLower(val), ',');
     setActivityTypes(activity_types);
-  } else if (!name.compare(kActivitiesDurationMsecsKey)) {
+  } else if (name == kActivitiesDurationMsecsKey) {
     activitiesOnDemandDuration_ = milliseconds(toInt32(val));
     activitiesOnDemandTimestamp_ = timestamp();
-  } else if (!name.compare(kActivitiesIterationsKey)) {
+  } else if (name == kActivitiesIterationsKey) {
     activitiesExternalAPIIterations_ = toInt32(val);
     activitiesOnDemandTimestamp_ = timestamp();
-  } else if (!name.compare(kActivitiesIterationsTargetKey)) {
+  } else if (name == kActivitiesIterationsTargetKey) {
     activitiesExternalAPIIterationsTarget_ = val;
-  } else if (!name.compare(kActivitiesNetFilterKey)) {
+  } else if (name == kActivitiesNetFilterKey) {
     activitiesExternalAPIFilter_ = splitAndTrim(val, ',');
-  } else if (!name.compare(kActivitiesMinNetSizeKey)) {
+  } else if (name == kActivitiesMinNetSizeKey) {
     activitiesExternalAPINetSizeThreshold_ = toInt32(val);
-  } else if (!name.compare(kActivitiesMinGpuOpCountKey)) {
+  } else if (name == kActivitiesMinGpuOpCountKey) {
     activitiesExternalAPIGpuOpCountThreshold_ = toInt32(val);
-  } else if (!name.compare(kLogVerboseLevelKey)) {
+  } else if (name == kLogVerboseLevelKey) {
     verboseLogLevel_ = toInt32(val);
-  } else if (!name.compare(kLogVerboseModulesKey)) {
+  } else if (name == kLogVerboseModulesKey) {
     verboseLogModules_ = splitAndTrim(val, ',');
-  } else if (!name.compare(kActivitiesEnabledKey)) {
+  } else if (name == kActivitiesEnabledKey) {
     activityProfilerEnabled_ = toBool(val);
-  } else if (!name.compare(kActivitiesLogFileKey)) {
+  } else if (name == kActivitiesLogFileKey) {
     activitiesLogFile_ = val;
     activitiesLogUrl_ = fmt::format("file://{}", val);
     activitiesOnDemandTimestamp_ = timestamp();
-  } else if (!name.compare(kActivitiesMaxGpuBufferSizeKey)) {
+  } else if (name == kActivitiesMaxGpuBufferSizeKey) {
     activitiesMaxGpuBufferSize_ = toInt32(val) * 1024 * 1024;
-  } else if (!name.compare(kActivitiesWarmupDurationSecsKey)) {
+  } else if (name == kActivitiesWarmupDurationSecsKey) {
     activitiesWarmupDuration_ = seconds(toInt32(val));
   }
 
   // Common
-  else if (!name.compare(kRequestTimestampKey)) {
-    LOG(WARNING) << kRequestTimestampKey
-                 << " has been deprecated - please use "
-                 << kProfileStartTimeKey;
+  else if (name == kRequestTimestampKey) {
     requestTimestamp_ = handleRequestTimestamp(toInt64(val));
-  } else if (!name.compare(kProfileStartTimeKey)) {
-    profileStartTime_ =
-      time_point<system_clock>(milliseconds(toInt64(val)));
-  } else if (!name.compare(kEnableSigUsr2Key)) {
+  } else if (name == kEnableSigUsr2Key) {
     enableSigUsr2_ = toBool(val);
-  } else if (!name.compare(kEnableIpcFabricKey)) {
+  } else if (name == kEnableIpcFabricKey) {
     enableIpcFabric_ = toBool(val);
   } else {
     return false;
@@ -343,8 +331,7 @@ void Config::setClientDefaults() {
   activitiesLogToMemory_ = true;
 }
 
-void Config::validate(
-    const time_point<system_clock>& fallbackProfileStartTime) {
+void Config::validate() {
   if (samplePeriod_.count() == 0) {
     LOG(WARNING) << "Sample period must be greater than 0, setting to 1ms";
     samplePeriod_ = milliseconds(1);
@@ -392,14 +379,6 @@ void Config::validate(
     samplesPerReport_ = max_samples_per_report;
   }
 
-  if (!hasProfileStartTime()) {
-    VLOG(0)
-        << "No explicit timestamp has been set. "
-        << "Defaulting it to now + activitiesWarmupDuration with buffer.";
-    profileStartTime_ = fallbackProfileStartTime +
-        activitiesWarmupDuration() + kDefaultBufferUntilWarmup;
-  }
-
   if (selectedActivityTypes_.size() == 0) {
     selectDefaultActivityTypes();
   }
@@ -419,10 +398,10 @@ void Config::printActivityProfilerConfig(std::ostream& s) const {
     << std::endl;
   s << "Net Iterations: " << activitiesOnDemandExternalIterations()
     << std::endl;
-  if (hasProfileStartTime()) {
+  if (hasRequestTimestamp()) {
     std::time_t t_c = system_clock::to_time_t(requestTimestamp());
-    LOG(INFO) << "Trace start time: "
-              << fmt::format("{:%Y-%m-%d %H:%M:%S}", fmt::localtime(t_c));
+    s << "Trace request client timestamp: "
+      << fmt::format("{:%Y-%m-%d %H:%M:%S}", fmt::localtime(t_c)) << std::endl;
   }
   s << "Trace duration: " << activitiesOnDemandDuration().count() << "ms"
     << std::endl;

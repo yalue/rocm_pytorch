@@ -37,7 +37,6 @@
   },
   "resolutions": {
     "portable-fetch/**/node-fetch": "^2.6.1",
-    "webpack/**/browserslist": "^4.16.5",
-    "webpack-dev-server/**/chokidar": "^3.5.2"
+    "webpack/**/browserslist": "^4.16.5"
   }
 }

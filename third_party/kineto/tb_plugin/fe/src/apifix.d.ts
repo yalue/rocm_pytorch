@@ -19,9 +19,6 @@ declare module './api/generated/api' {
     host_self_duration: OperationTableDataInner['hostSelfDuration']
     host_total_duration: OperationTableDataInner['hostTotalDuration']
     has_call_stack: OperationTableDataInner['hasCallStack']
-    tc_eligible: OperationTableDataInner['tcEligible']
-    tc_self_ratio: OperationTableDataInner['tcSelfRatio']
-    tc_total_ratio: OperationTableDataInner['tcTotalRatio']
   }
 
   export interface CallStackTableDataInner {
@@ -31,9 +28,6 @@ declare module './api/generated/api' {
     host_self_duration: CallStackTableDataInner['hostSelfDuration']
     host_total_duration: CallStackTableDataInner['hostTotalDuration']
     call_stack: CallStackTableDataInner['callStack']
-    tc_eligible: OperationTableDataInner['tcEligible']
-    tc_self_ratio: OperationTableDataInner['tcSelfRatio']
-    tc_total_ratio: OperationTableDataInner['tcTotalRatio']
   }
 
   export interface Overview {
@@ -42,14 +36,5 @@ declare module './api/generated/api' {
 
   export interface MemoryTableMetadata {
     default_device: MemoryTableMetadata['defaultDevice']
-  }
-
-  export interface MemoryCurveMetadata {
-    default_device: MemoryCurveMetadata['defaultDevice']
-    first_ts: MemoryCurveMetadata['firstTs']
-    time_metric: MemoryCurveMetadata['timeMetric']
-    memory_metric: MemoryCurveMetadata['memoryMetric']
-    time_factor: MemoryCurveMetadata['timeFactor']
-    memory_factor: MemoryCurveMetadata['memoryFactor']
   }
 }

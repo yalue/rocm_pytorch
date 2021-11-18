@@ -44,9 +44,8 @@ class Gemm_7_6 final : public Adapter {
       }
     }
 
-    Node* adapt(std::shared_ptr<Graph> graph, Node* node) const override {
+    void adapt(std::shared_ptr<Graph> graph, Node* node) const override {
       adapt_gemm_7_6(graph, node);
-      return node;
     }
 };
 

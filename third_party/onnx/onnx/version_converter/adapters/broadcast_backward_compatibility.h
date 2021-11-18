@@ -39,9 +39,8 @@ class BroadcastBackwardCompatibility final : public Adapter {
       }
     }
 
-    Node* adapt(std::shared_ptr<Graph> graph, Node* node) const override {
+    void adapt(std::shared_ptr<Graph> graph, Node* node) const override {
       adapt_broadcast_backward_compatibility(graph, node);
-      return node;
     }
 };
 

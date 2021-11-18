@@ -20,9 +20,8 @@ class Cast_9_8 final : public Adapter {
             ONNX_ASSERT("Casting From/To STRING data type is not supported")
     }
 
-    Node* adapt(std::shared_ptr<Graph> graph, Node* node) const override {
+    void adapt(std::shared_ptr<Graph> graph, Node* node) const override {
       adapt_cast_9_8(graph, node);
-      return node;
     }
 };
 

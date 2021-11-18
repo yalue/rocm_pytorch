@@ -6,7 +6,7 @@
 * [Overall Test Coverage](#overall-test-coverage)
 # Node Test Coverage
 ## Summary
-Node tests have covered 152/168 (90.48%, 5 generators excluded) common operators.
+Node tests have covered 149/163 (91.41%, 5 generators excluded) common operators.
 
 Node tests have covered 0/0 (N/A) experimental operators.
 
@@ -341,22 +341,22 @@ node = onnx.helper.make_node(
 )
 
 # 2d
-x = (np.random.randn(3, 4) > 0).astype(bool)
-y = (np.random.randn(3, 4) > 0).astype(bool)
+x = (np.random.randn(3, 4) > 0).astype(np.bool)
+y = (np.random.randn(3, 4) > 0).astype(np.bool)
 z = np.logical_and(x, y)
 expect(node, inputs=[x, y], outputs=[z],
        name='test_and2d')
 
 # 3d
-x = (np.random.randn(3, 4, 5) > 0).astype(bool)
-y = (np.random.randn(3, 4, 5) > 0).astype(bool)
+x = (np.random.randn(3, 4, 5) > 0).astype(np.bool)
+y = (np.random.randn(3, 4, 5) > 0).astype(np.bool)
 z = np.logical_and(x, y)
 expect(node, inputs=[x, y], outputs=[z],
        name='test_and3d')
 
 # 4d
-x = (np.random.randn(3, 4, 5, 6) > 0).astype(bool)
-y = (np.random.randn(3, 4, 5, 6) > 0).astype(bool)
+x = (np.random.randn(3, 4, 5, 6) > 0).astype(np.bool)
+y = (np.random.randn(3, 4, 5, 6) > 0).astype(np.bool)
 z = np.logical_and(x, y)
 expect(node, inputs=[x, y], outputs=[z],
        name='test_and4d')
@@ -374,36 +374,36 @@ node = onnx.helper.make_node(
 )
 
 # 3d vs 1d
-x = (np.random.randn(3, 4, 5) > 0).astype(bool)
-y = (np.random.randn(5) > 0).astype(bool)
+x = (np.random.randn(3, 4, 5) > 0).astype(np.bool)
+y = (np.random.randn(5) > 0).astype(np.bool)
 z = np.logical_and(x, y)
 expect(node, inputs=[x, y], outputs=[z],
        name='test_and_bcast3v1d')
 
 # 3d vs 2d
-x = (np.random.randn(3, 4, 5) > 0).astype(bool)
-y = (np.random.randn(4, 5) > 0).astype(bool)
+x = (np.random.randn(3, 4, 5) > 0).astype(np.bool)
+y = (np.random.randn(4, 5) > 0).astype(np.bool)
 z = np.logical_and(x, y)
 expect(node, inputs=[x, y], outputs=[z],
        name='test_and_bcast3v2d')
 
 # 4d vs 2d
-x = (np.random.randn(3, 4, 5, 6) > 0).astype(bool)
-y = (np.random.randn(5, 6) > 0).astype(bool)
+x = (np.random.randn(3, 4, 5, 6) > 0).astype(np.bool)
+y = (np.random.randn(5, 6) > 0).astype(np.bool)
 z = np.logical_and(x, y)
 expect(node, inputs=[x, y], outputs=[z],
        name='test_and_bcast4v2d')
 
 # 4d vs 3d
-x = (np.random.randn(3, 4, 5, 6) > 0).astype(bool)
-y = (np.random.randn(4, 5, 6) > 0).astype(bool)
+x = (np.random.randn(3, 4, 5, 6) > 0).astype(np.bool)
+y = (np.random.randn(4, 5, 6) > 0).astype(np.bool)
 z = np.logical_and(x, y)
 expect(node, inputs=[x, y], outputs=[z],
        name='test_and_bcast4v3d')
 
 # 4d vs 4d
-x = (np.random.randn(1, 4, 1, 6) > 0).astype(bool)
-y = (np.random.randn(3, 1, 5, 6) > 0).astype(bool)
+x = (np.random.randn(1, 4, 1, 6) > 0).astype(np.bool)
+y = (np.random.randn(3, 1, 5, 6) > 0).astype(np.bool)
 z = np.logical_and(x, y)
 expect(node, inputs=[x, y], outputs=[z],
        name='test_and_bcast4v4d')
@@ -1419,61 +1419,6 @@ expect(node, inputs=[x, s, bias, mean, var],
 </details>
 
 
-### Bernoulli
-There are 3 test cases, listed as following:
-<details>
-<summary>bernoulli_with_dtype</summary>
-
-```python
-node = onnx.helper.make_node(
-    'Bernoulli',
-    inputs=['x'],
-    outputs=['y'],
-    dtype=onnx.TensorProto.DOUBLE,
-)
-
-x = np.random.uniform(0.0, 1.0, 10).astype(np.float32)
-y = bernoulli_reference_implementation(x, np.float64)
-expect(node, inputs=[x], outputs=[y], name='test_bernoulli_double')
-```
-
-</details>
-<details>
-<summary>bernoulli_with_seed</summary>
-
-```python
-seed = np.float(0)
-node = onnx.helper.make_node(
-    'Bernoulli',
-    inputs=['x'],
-    outputs=['y'],
-    seed=seed,
-)
-
-x = np.random.uniform(0.0, 1.0, 10).astype(np.float32)
-y = bernoulli_reference_implementation(x, np.float32)
-expect(node, inputs=[x], outputs=[y], name='test_bernoulli_seed')
-```
-
-</details>
-<details>
-<summary>bernoulli_without_dtype</summary>
-
-```python
-node = onnx.helper.make_node(
-    'Bernoulli',
-    inputs=['x'],
-    outputs=['y'],
-)
-
-x = np.random.uniform(0.0, 1.0, 10).astype(np.float)
-y = bernoulli_reference_implementation(x, np.float)
-expect(node, inputs=[x], outputs=[y], name='test_bernoulli')
-```
-
-</details>
-
-
 ### BitShift
 There are 8 test cases, listed as following:
 <details>
@@ -1651,8 +1596,8 @@ test_cases = [
 ]
 
 for from_type, to_type in test_cases:
-    input_type_proto = None
-    output_type_proto = None
+    input_type = None
+    output_type = None
     if 'BFLOAT16' == from_type or 'BFLOAT16' == to_type:
         np_fp32 = np.array([u'0.47892547', u'0.48033667', u'0.49968487', u'0.81910545',
             u'0.47031248', u'0.816468', u'0.21087195', u'0.7229038',
@@ -1664,8 +1609,8 @@ for from_type, to_type in test_cases:
             assert from_type == 'FLOAT'
             input = np_fp32.reshape([3, 4])
             output = np_bfp16.reshape([3, 4])
-            input_type_proto = onnx.helper.make_tensor_type_proto(int(TensorProto.FLOAT), input.shape)
-            output_type_proto = onnx.helper.make_tensor_type_proto(int(TensorProto.BFLOAT16), output.shape)
+            input_type = int(TensorProto.FLOAT)
+            output_type = int(TensorProto.BFLOAT16)
         else:
             assert to_type == 'FLOAT'
             input = np_bfp16.reshape([3, 4])
@@ -1677,95 +1622,8 @@ for from_type, to_type in test_cases:
                 np_fp32_zeros[0::2] = np_bfp16
             np_fp32_from_bfloat = np_fp32_zeros.view(dtype=np.float32)
             output = np_fp32_from_bfloat.reshape([3, 4])
-            input_type_proto = onnx.helper.make_tensor_type_proto(int(TensorProto.BFLOAT16), input.shape)
-            output_type_proto = onnx.helper.make_tensor_type_proto(int(TensorProto.FLOAT), output.shape)
-    elif 'STRING' != from_type:
-        input = np.random.random_sample(shape).astype(
-            TENSOR_TYPE_TO_NP_TYPE[getattr(TensorProto, from_type)])
-        if ('STRING' == to_type):
-            # Converting input to str, then give it object dtype for generating script
-            ss = []
-            for i in input.flatten():
-                s = str(i).encode('utf-8')
-                su = s.decode('utf-8')
-                ss.append(su)
-
-            output = np.array(ss).astype(object).reshape([3, 4])
-        else:
-            output = input.astype(TENSOR_TYPE_TO_NP_TYPE[getattr(TensorProto, to_type)])
-    else:
-        input = np.array([u'0.47892547', u'0.48033667', u'0.49968487', u'0.81910545',
-            u'0.47031248', u'0.816468', u'0.21087195', u'0.7229038',
-            u'NaN', u'INF', u'+INF', u'-INF'], dtype=np.dtype(object)).reshape([3, 4])
-        output = input.astype(TENSOR_TYPE_TO_NP_TYPE[getattr(TensorProto, to_type)])
-    node = onnx.helper.make_node(
-        'Cast',
-        inputs=['input'],
-        outputs=['output'],
-        to=getattr(TensorProto, to_type),
-    )
-    if input_type_proto and output_type_proto:
-        expect(node, inputs=[input], outputs=[output],
-                   name='test_cast_' + from_type + '_to_' + to_type,
-                   input_type_protos=[input_type_proto],
-                   output_type_protos=[output_type_proto])
-    else:
-        expect(node, inputs=[input], outputs=[output],
-                   name='test_cast_' + from_type + '_to_' + to_type)
-```
-
-</details>
-
-
-### CastLike
-There are 1 test cases, listed as following:
-<details>
-<summary>castlike</summary>
-
-```python
-shape = (3, 4)
-test_cases = [
-    ('FLOAT', 'FLOAT16'),
-    ('FLOAT', 'DOUBLE'),
-    ('FLOAT16', 'FLOAT'),
-    ('FLOAT16', 'DOUBLE'),
-    ('DOUBLE', 'FLOAT'),
-    ('DOUBLE', 'FLOAT16'),
-    ('FLOAT', 'STRING'),
-    ('STRING', 'FLOAT'),
-    ('FLOAT', 'BFLOAT16'),
-    ('BFLOAT16', 'FLOAT'),
-]
-
-for from_type, to_type in test_cases:
-    input_type_proto = None
-    output_type_proto = None
-    if 'BFLOAT16' == from_type or 'BFLOAT16' == to_type:
-        np_fp32 = np.array([u'0.47892547', u'0.48033667', u'0.49968487', u'0.81910545',
-            u'0.47031248', u'0.816468', u'0.21087195', u'0.7229038',
-            u'NaN', u'INF', u'+INF', u'-INF'], dtype=np.float32)
-        little_endisan = sys.byteorder == 'little'
-        np_uint16_view = np_fp32.view(dtype=np.uint16)
-        np_bfp16 = np_uint16_view[1::2] if little_endisan else np_uint16_view[0::2]
-        if 'BFLOAT16' == to_type:
-            assert from_type == 'FLOAT'
-            input = np_fp32.reshape([3, 4])
-            output = np_bfp16.reshape([3, 4])
-            input_type_proto = onnx.helper.make_tensor_type_proto(int(TensorProto.FLOAT), input.shape)
-            output_type_proto = onnx.helper.make_tensor_type_proto(int(TensorProto.BFLOAT16), output.shape)
-        else:
-            assert to_type == 'FLOAT'
-            input = np_bfp16.reshape([3, 4])
-            #convert bfloat to FLOAT
-            np_fp32_zeros = np.zeros((len(np_bfp16) * 2,), dtype=np.uint16)
-            if little_endisan:
-                np_fp32_zeros[1::2] = np_bfp16
-            else:
-                np_fp32_zeros[0::2] = np_bfp16
-            np_fp32_from_bfloat = np_fp32_zeros.view(dtype=np.float32)
-            output = np_fp32_from_bfloat.reshape([3, 4])
-            input_type_proto = onnx.helper.make_tensor_type_proto(int(TensorProto.BFLOAT16), input.shape)
-            output_type_proto = onnx.helper.make_tensor_type_proto(int(TensorProto.FLOAT), output.shape)
+            input_type = int(TensorProto.BFLOAT16)
+            output_type = int(TensorProto.FLOAT)
     elif 'STRING' != from_type:
         input = np.random.random_sample(shape).astype(
             TENSOR_TYPE_TO_NP_TYPE[getattr(TensorProto, from_type)])
@@ -1785,20 +1643,20 @@ for from_type, to_type in test_cases:
             u'0.47031248', u'0.816468', u'0.21087195', u'0.7229038',
             u'NaN', u'INF', u'+INF', u'-INF'], dtype=np.dtype(np.object)).reshape([3, 4])
         output = input.astype(TENSOR_TYPE_TO_NP_TYPE[getattr(TensorProto, to_type)])
-    like = output.flatten()[0:1]
     node = onnx.helper.make_node(
-        'CastLike',
-        inputs=['input', 'like'],
+        'Cast',
+        inputs=['input'],
         outputs=['output'],
+        to=getattr(TensorProto, to_type),
     )
-    if input_type_proto and output_type_proto:
-        expect(node, inputs=[input, like], outputs=[output],
-                   name='test_castlike_' + from_type + '_to_' + to_type,
-                   input_type_protos=[input_type_proto, output_type_proto],
-                   output_type_protos=[output_type_proto])
+    if input_type and output_type:
+        expect(node, inputs=[input], outputs=[output],
+                   name='test_cast_' + from_type + '_to_' + to_type,
+                   input_types=[input_type],
+                   output_types=[output_type])
     else:
-        expect(node, inputs=[input, like], outputs=[output],
-                   name='test_castlike_' + from_type + '_to_' + to_type)
+        expect(node, inputs=[input], outputs=[output],
+                   name='test_cast_' + from_type + '_to_' + to_type)
 ```
 
 </details>
@@ -2018,7 +1876,7 @@ output = np.compress(condition, input, axis=0)
 #[[ 3.  4.]
 # [ 5.  6.]]
 
-expect(node, inputs=[input, condition.astype(bool)], outputs=[output],
+expect(node, inputs=[input, condition.astype(np.bool)], outputs=[output],
        name='test_compress_0')
 ```
 
@@ -2041,7 +1899,7 @@ output = np.compress(condition, input, axis=1)
 # [ 4.]
 # [ 6.]]
 
-expect(node, inputs=[input, condition.astype(bool)], outputs=[output],
+expect(node, inputs=[input, condition.astype(np.bool)], outputs=[output],
        name='test_compress_1')
 ```
 
@@ -2061,7 +1919,7 @@ output = np.compress(condition, input)
 #print(output)
 #[ 2., 5.]
 
-expect(node, inputs=[input, condition.astype(bool)], outputs=[output],
+expect(node, inputs=[input, condition.astype(np.bool)], outputs=[output],
        name='test_compress_default_axis')
 ```
 
@@ -2083,7 +1941,7 @@ output = np.compress(condition, input, axis=-1)
 #[[ 2.]
 # [ 4.]
 # [ 6.]]
-expect(node, inputs=[input, condition.astype(bool)], outputs=[output],
+expect(node, inputs=[input, condition.astype(np.bool)], outputs=[output],
        name='test_compress_negative_axis')
 ```
 
@@ -2658,7 +2516,7 @@ W = np.array([[[[1., 1., 1.],  # (1, 2, 3, 3)
                 [1., 1., 1.],
                 [1., 1., 1.]]]]).astype(np.float32)
 
-node = onnx.helper.make_node("ConvTranspose", ["X", "W"], ["Y"], auto_pad="SAME_UPPER", strides=[2, 2])
+node = onnx.helper.make_node("ConvTranspose", ["X", "W"], ["Y"], auto_pad="SAME_LOWER", strides=[2, 2])
 
 y = np.array([[[[0., 0., 1., 1., 3., 2.],
                 [0., 0., 1., 1., 3., 2.],
@@ -4079,9 +3937,6 @@ data = np.arange(10).astype(np.float32)
 indices = np.array([0, -9, -10])
 y = np.take(data, indices, axis=0)
 
-# print(y)
-# [0. 1. 0.]
-
 expect(node, inputs=[data, indices.astype(np.int64)], outputs=[y],
        name='test_gather_negative_indices')
 ```
@@ -4459,7 +4314,10 @@ node = onnx.helper.make_node(
     outputs=['y'],
 )
 x = np.random.randn(1, 3, 5, 5).astype(np.float32)
-y = np.mean(x, axis=tuple(range(2, np.ndim(x))), keepdims=True)
+spatial_shape = np.ndim(x) - 2
+y = np.average(x, axis=tuple(range(spatial_shape, spatial_shape + 2)))
+for _ in range(spatial_shape):
+    y = np.expand_dims(y, -1)
 expect(node, inputs=[x], outputs=[y], name='test_globalaveragepool')
 ```
 
@@ -4499,7 +4357,10 @@ node = onnx.helper.make_node(
     outputs=['y'],
 )
 x = np.random.randn(1, 3, 5, 5).astype(np.float32)
-y = np.max(x, axis=tuple(range(2, np.ndim(x))), keepdims=True)
+spatial_shape = np.ndim(x) - 2
+y = np.max(x, axis=tuple(range(spatial_shape, spatial_shape + 2)))
+for _ in range(spatial_shape):
+    y = np.expand_dims(y, -1)
 expect(node, inputs=[x], outputs=[y], name='test_globalmaxpool')
 ```
 
@@ -4863,7 +4724,7 @@ expect(node, inputs=[x], outputs=[y],
 
 
 ### Identity
-There are 3 test cases, listed as following:
+There are 2 test cases, listed as following:
 <details>
 <summary>identity</summary>
 
@@ -4881,29 +4742,6 @@ data = np.array([[[
 
 expect(node, inputs=[data], outputs=[data],
        name='test_identity')
-```
-
-</details>
-<details>
-<summary>identity_opt</summary>
-
-```python
-ten_in_tp = onnx.helper.make_tensor_type_proto(onnx.TensorProto.FLOAT, shape=[5])
-seq_in_tp = onnx.helper.make_sequence_type_proto(ten_in_tp)
-opt_in_tp = onnx.helper.make_optional_type_proto(seq_in_tp)
-
-identity_node = onnx.helper.make_node(
-    'Identity',
-    inputs=['opt_in'],
-    outputs=['opt_out']
-)
-
-x = [np.array([1, 2, 3, 4, 5]).astype(np.float32)]
-
-expect(identity_node, inputs=[x], outputs=[x], name='test_identity_opt',
-       opset_imports=[onnx.helper.make_opsetid("", 16)],
-       input_type_protos=[opt_in_tp],
-       output_type_protos=[opt_in_tp])
 ```
 
 </details>
@@ -4934,7 +4772,7 @@ expect(node, inputs=[data], outputs=[data], name='test_identity_sequence')
 
 
 ### If
-There are 3 test cases, listed as following:
+There are 2 test cases, listed as following:
 <details>
 <summary>if</summary>
 
@@ -4984,90 +4822,10 @@ if_node = onnx.helper.make_node(
     else_branch=else_body
 )
 
-cond = np.array(1).astype(bool)
+cond = np.array(1).astype(np.bool)
 res = x if cond else y
 expect(if_node, inputs=[cond], outputs=[res], name='test_if',
-       opset_imports=[onnx.helper.make_opsetid("", 11)])
-```
-
-</details>
-<details>
-<summary>if_optional</summary>
-
-```python
-# Given a bool scalar input cond, return an empty optional sequence of
-# tensor if True, return an optional sequence with value x
-# (the input optional sequence) otherwise.
-
-ten_in_tp = onnx.helper.make_tensor_type_proto(onnx.TensorProto.FLOAT, shape=[5])
-seq_in_tp = onnx.helper.make_sequence_type_proto(ten_in_tp)
-opt_in_tp = onnx.helper.make_optional_type_proto(seq_in_tp)
-
-then_out_tensor_tp = onnx.helper.make_tensor_type_proto(onnx.TensorProto.FLOAT, shape=[5])
-then_out_seq_tp = onnx.helper.make_sequence_type_proto(then_out_tensor_tp)
-then_out_opt_tp = onnx.helper.make_optional_type_proto(then_out_seq_tp)
-then_out = onnx.helper.make_value_info('then_out', then_out_opt_tp)
-
-else_out_tensor_tp = onnx.helper.make_tensor_type_proto(onnx.TensorProto.FLOAT, shape=[5])
-else_out_seq_tp = onnx.helper.make_sequence_type_proto(else_out_tensor_tp)
-else_out_opt_tp = onnx.helper.make_optional_type_proto(else_out_seq_tp)
-else_out = onnx.helper.make_value_info('else_out', else_out_opt_tp)
-
-x = [np.array([1, 2, 3, 4, 5]).astype(np.float32)]
-cond = np.array(0).astype(bool)
-res = compute_if_outputs(x, cond)
-
-opt_empty_in = onnx.helper.make_node(
-    'Optional',
-    inputs=[],
-    outputs=['optional_empty'],
-    type=opt_in_tp
-)
-
-then_body = onnx.helper.make_graph(
-    [opt_empty_in],
-    'then_body',
-    [],
-    [then_out]
-)
-
-else_const_node = onnx.helper.make_node(
-    'Constant',
-    inputs=[],
-    outputs=['x'],
-    value=onnx.numpy_helper.from_array(x[0])
-)
-
-else_seq_node = onnx.helper.make_node(
-    'SequenceConstruct',
-    inputs=['x'],
-    outputs=['else_seq']
-)
-
-else_optional_seq_node = onnx.helper.make_node(
-    'Optional',
-    inputs=['else_seq'],
-    outputs=['else_opt']
-)
-
-else_body = onnx.helper.make_graph(
-    [else_const_node, else_seq_node, else_optional_seq_node],
-    'else_body',
-    [],
-    [else_out]
-)
-
-if_node = onnx.helper.make_node(
-    'If',
-    inputs=['cond'],
-    outputs=['sequence'],
-    then_branch=then_body,
-    else_branch=else_body
-)
-
-expect(if_node, inputs=[cond], outputs=[res], name='test_if_opt',
-       output_type_protos=[else_out_opt_tp],
-       opset_imports=[onnx.helper.make_opsetid("", 16)])
+    opset_imports=[onnx.helper.make_opsetid("", 11)])
 ```
 
 </details>
@@ -5078,8 +4836,8 @@ expect(if_node, inputs=[cond], outputs=[res], name='test_if_opt',
 # Given a bool scalar input cond.
 # return constant sequence x if cond is True, otherwise return constant sequence y.
 
-then_out = onnx.helper.make_tensor_sequence_value_info('then_out', onnx.TensorProto.FLOAT, shape=[5])
-else_out = onnx.helper.make_tensor_sequence_value_info('else_out', onnx.TensorProto.FLOAT, shape=[5])
+then_out = onnx.helper.make_sequence_value_info('then_out', onnx.TensorProto.FLOAT, shape=[5])
+else_out = onnx.helper.make_sequence_value_info('else_out', onnx.TensorProto.FLOAT, shape=[5])
 
 x = [np.array([1, 2, 3, 4, 5]).astype(np.float32)]
 y = [np.array([5, 4, 3, 2, 1]).astype(np.float32)]
@@ -5132,10 +4890,10 @@ if_node = onnx.helper.make_node(
     else_branch=else_body
 )
 
-cond = np.array(1).astype(bool)
+cond = np.array(1).astype(np.bool)
 res = x if cond else y
 expect(if_node, inputs=[cond], outputs=[res], name='test_if_seq',
-       opset_imports=[onnx.helper.make_opsetid("", 13)])
+    opset_imports=[onnx.helper.make_opsetid("", 13)])
 ```
 
 </details>
@@ -5699,7 +5457,7 @@ expect(node, inputs=[x], outputs=[y],
 
 
 ### Loop
-There are 3 test cases, listed as following:
+There are 2 test cases, listed as following:
 <details>
 <summary>loop_11</summary>
 
@@ -5805,7 +5563,7 @@ node = onnx.helper.make_node(
 
 trip_count = np.array(5).astype(np.int64)
 res_y = np.array([13]).astype(np.float32)
-cond = np.array(1).astype(bool)
+cond = np.array(1).astype(np.bool)
 res_scan = np.array([-1, 1, 4, 8, 13]).astype(np.float32).reshape((5, 1))
 expect(node, inputs=[trip_count, cond, y], outputs=[res_y, res_scan],
        name='test_loop11', opset_imports=[onnx.helper.make_opsetid("", 11)])
@@ -5820,8 +5578,8 @@ expect(node, inputs=[trip_count, cond, y], outputs=[res_y, res_scan],
 # Return a sequence of tensors of
 #   [[x1], [x1, x2], ..., [x1, ..., xN]]
 
-seq_in = onnx.helper.make_tensor_sequence_value_info('seq_in', onnx.TensorProto.FLOAT, None)
-seq_out = onnx.helper.make_tensor_sequence_value_info('seq_out', onnx.TensorProto.FLOAT, None)
+seq_in = onnx.helper.make_sequence_value_info('seq_in', onnx.TensorProto.FLOAT, None)
+seq_out = onnx.helper.make_sequence_value_info('seq_out', onnx.TensorProto.FLOAT, None)
 cond_in = onnx.helper.make_tensor_value_info('cond_in', onnx.TensorProto.BOOL, [])
 cond_out = onnx.helper.make_tensor_value_info('cond_out', onnx.TensorProto.BOOL, [])
 iter_count = onnx.helper.make_tensor_value_info('iter_count', onnx.TensorProto.INT64, [])
@@ -5924,185 +5682,10 @@ node = onnx.helper.make_node(
 trip_count = np.array(5).astype(np.int64)
 seq_empty = []  # type: List[Any]
 seq_res = [x[:int(i)] for i in x]
-cond = np.array(1).astype(bool)
+cond = np.array(1).astype(np.bool)
 expect(node, inputs=[trip_count, cond, seq_empty], outputs=[seq_res],
        name='test_loop13_seq', opset_imports=[onnx.helper.make_opsetid("", 13)],
-       input_type_protos=[onnx.helper.make_tensor_type_proto(onnx.TensorProto.INT64, trip_count.shape),
-                          onnx.helper.make_tensor_type_proto(onnx.TensorProto.BOOL, cond.shape),
-                          onnx.helper.make_sequence_type_proto(
-                              onnx.helper.make_tensor_type_proto(onnx.TensorProto.FLOAT, []))])
-```
-
-</details>
-<details>
-<summary>loop_16_none</summary>
-
-```python
-# Given a tensor x of values [x1, ..., xN], and an initial optional sequence of tensors s1,
-# Return a concatenated sequence of tensors of
-#   [s1, [x1], [x1, x2], ..., [x1, ..., xN]]
-
-ten_in_tp = onnx.helper.make_tensor_type_proto(onnx.TensorProto.FLOAT, None)
-seq_in_tp = onnx.helper.make_sequence_type_proto(ten_in_tp)
-opt_in_tp = onnx.helper.make_optional_type_proto(seq_in_tp)
-opt_in = onnx.helper.make_value_info('opt_seq_in', opt_in_tp)
-seq_out = onnx.helper.make_tensor_sequence_value_info('seq_out', onnx.TensorProto.FLOAT, None)
-cond_in = onnx.helper.make_tensor_value_info('cond_in', onnx.TensorProto.BOOL, [])
-cond_out = onnx.helper.make_tensor_value_info('cond_out', onnx.TensorProto.BOOL, [])
-iter_count = onnx.helper.make_tensor_value_info('iter_count', onnx.TensorProto.INT64, [])
-
-x = np.array([1, 2, 3, 4, 5]).astype(np.float32)
-
-optional_has_elem_node = onnx.helper.make_node(
-    'OptionalHasElement',
-    inputs=['opt_seq_in'],
-    outputs=['optional_has_elem']
-)
-
-optional_is_none = onnx.helper.make_node(
-    'Not',
-    inputs=['optional_has_elem'],
-    outputs=['optional_is_none']
-)
-
-optional_get_elem = onnx.helper.make_node(
-    'OptionalGetElement',
-    inputs=['opt_seq_in'],
-    outputs=['seq_in']
-)
-
-seq_empty_in = onnx.helper.make_node(
-    'SequenceEmpty',
-    inputs=[],
-    outputs=['seq_empty']
-)
-
-then_seq_out = onnx.helper.make_tensor_sequence_value_info('seq_out', onnx.TensorProto.FLOAT, None)
-then_body = onnx.helper.make_graph(
-    [seq_empty_in],
-    'then_body',
-    [],
-    [then_seq_out]
-)
-
-else_seq_out = onnx.helper.make_tensor_sequence_value_info('seq_out', onnx.TensorProto.FLOAT, None)
-else_body = onnx.helper.make_graph(
-    [optional_get_elem],
-    'else_body',
-    [opt_in],
-    [else_seq_out]
-)
-
-if_node = onnx.helper.make_node(
-    'If',
-    inputs=['optional_is_none'],
-    outputs=['sequence'],
-    then_branch=then_body,
-    else_branch=else_body
-)
-
-x_const_node = onnx.helper.make_node(
-    'Constant',
-    inputs=[],
-    outputs=['x'],
-    value=onnx.helper.make_tensor(
-        name='const_tensor_x',
-        data_type=onnx.TensorProto.FLOAT,
-        dims=x.shape,
-        vals=x.flatten().astype(float),
-    )
-)
-
-one_const_node = onnx.helper.make_node(
-    'Constant',
-    inputs=[],
-    outputs=['one'],
-    value=onnx.helper.make_tensor(
-        name='const_tensor_one',
-        data_type=onnx.TensorProto.INT64,
-        dims=(),
-        vals=[1]
-    )
-)
-
-zero_const_node = onnx.helper.make_node(
-    'Constant',
-    inputs=[],
-    outputs=['slice_start'],
-    value=onnx.helper.make_tensor(
-        name='const_tensor_zero',
-        data_type=onnx.TensorProto.INT64,
-        dims=(1,),
-        vals=[0]
-    )
-)
-
-axes_node = onnx.helper.make_node(
-    'Constant',
-    inputs=[],
-    outputs=['axes'],
-    value=onnx.helper.make_tensor(
-        name='const_tensor_axes',
-        data_type=onnx.TensorProto.INT64,
-        dims=(),
-        vals=[0]
-    )
-)
-
-add_node = onnx.helper.make_node(
-    'Add',
-    inputs=['iter_count', 'one'],
-    outputs=['end']
-)
-
-end_unsqueeze_node = onnx.helper.make_node(
-    'Unsqueeze',
-    inputs=['end', 'axes'],
-    outputs=['slice_end']
-)
-
-slice_node = onnx.helper.make_node(
-    'Slice',
-    inputs=['x', 'slice_start', 'slice_end'],
-    outputs=['slice_out']
-)
-
-insert_node = onnx.helper.make_node(
-    'SequenceInsert',
-    inputs=['sequence', 'slice_out'],
-    outputs=['seq_out']
-)
-
-identity_node = onnx.helper.make_node(
-    'Identity',
-    inputs=['cond_in'],
-    outputs=['cond_out']
-)
-
-loop_body = onnx.helper.make_graph(
-    [identity_node, optional_has_elem_node, optional_is_none, if_node, x_const_node, one_const_node,
-     zero_const_node, add_node, axes_node, end_unsqueeze_node, slice_node, insert_node],
-    'loop_body',
-    [iter_count, cond_in, opt_in],
-    [cond_out, seq_out]
-)
-
-node = onnx.helper.make_node(
-    'Loop',
-    inputs=['trip_count', 'cond', 'opt_seq'],
-    outputs=['seq_res'],
-    body=loop_body
-)
-
-trip_count = np.array(5).astype(np.int64)
-cond = np.array(1).astype(bool)
-seq_empty = []  # type: List[Any]
-seq_res = compute_loop_outputs(x, seq_empty, trip_count)
-expect(node, inputs=[trip_count, cond, seq_empty], outputs=[seq_res],
-       name='test_loop16_seq_none', opset_imports=[onnx.helper.make_opsetid("", 16)],
-       input_type_protos=[onnx.helper.make_tensor_type_proto(onnx.TensorProto.INT64, trip_count.shape),
-                          onnx.helper.make_tensor_type_proto(onnx.TensorProto.BOOL, cond.shape),
-                          opt_in_tp])
+       input_types=[onnx.TensorProto.INT64, onnx.TensorProto.BOOL, onnx.TensorProto.FLOAT])
 ```
 
 </details>
@@ -8094,7 +7677,7 @@ node = onnx.helper.make_node(
     outputs=['result'],
 )
 
-condition = np.array([[1, 0], [1, 1]], dtype=bool)
+condition = np.array([[1, 0], [1, 1]], dtype=np.bool)
 result = np.array(np.nonzero(condition), dtype=np.int64)  # expected output [[0, 1, 1], [0, 0, 1]]
 expect(node, inputs=[condition], outputs=[result],
        name='test_nonzero_example')
@@ -8116,17 +7699,17 @@ node = onnx.helper.make_node(
 )
 
 # 2d
-x = (np.random.randn(3, 4) > 0).astype(bool)
+x = (np.random.randn(3, 4) > 0).astype(np.bool)
 expect(node, inputs=[x], outputs=[np.logical_not(x)],
        name='test_not_2d')
 
 # 3d
-x = (np.random.randn(3, 4, 5) > 0).astype(bool)
+x = (np.random.randn(3, 4, 5) > 0).astype(np.bool)
 expect(node, inputs=[x], outputs=[np.logical_not(x)],
        name='test_not_3d')
 
 # 4d
-x = (np.random.randn(3, 4, 5, 6) > 0).astype(bool)
+x = (np.random.randn(3, 4, 5, 6) > 0).astype(np.bool)
 expect(node, inputs=[x], outputs=[np.logical_not(x)],
        name='test_not_4d')
 ```
@@ -8200,11 +7783,6 @@ node = onnx.helper.make_node(
 )
 indices = np.array([0, -7, -8], dtype=np.int64)
 
-# print(y)
-# [[3. 1. 1. 1. 1. 1. 1. 1. 1. 1.]
-#  [1. 1. 1. 3. 1. 1. 1. 1. 1. 1.]
-#  [1. 1. 3. 1. 1. 1. 1. 1. 1. 1.]]
-
 depth = np.array([10], dtype=np.float32)
 values = np.array([off_value, on_value], dtype=output_type)
 y = one_hot(indices, depth, axis=axisValue, dtype=output_type)
@@ -8236,89 +7814,6 @@ expect(node, inputs=[indices, depth, values], outputs=[y], name='test_onehot_wit
 </details>
 
 
-### OptionalHasElement
-There are 4 test cases, listed as following:
-<details>
-<summary>empty</summary>
-
-```python
-optional = None
-tensor_type_proto = onnx.helper.make_tensor_type_proto(elem_type=onnx.TensorProto.INT32, shape=[])
-input_type_proto = onnx.helper.make_optional_type_proto(tensor_type_proto)
-node = onnx.helper.make_node(
-    'OptionalHasElement',
-    inputs=['optional_input'],
-    outputs=['output']
-)
-output = optional_has_element_reference_implementation(optional)
-expect(node, inputs=[optional], outputs=[output],
-       input_type_protos=[input_type_proto],
-       name='test_optional_has_element_empty')
-```
-
-</details>
-<details>
-<summary>get_element_sequence</summary>
-
-```python
-optional = [np.array([1, 2, 3, 4]).astype(np.int32)]
-tensor_type_proto = onnx.helper.make_tensor_type_proto(elem_type=onnx.TensorProto.INT32, shape=[4, ])
-seq_type_proto = onnx.helper.make_sequence_type_proto(tensor_type_proto)
-input_type_proto = onnx.helper.make_optional_type_proto(seq_type_proto)
-
-node = onnx.helper.make_node(
-    'OptionalGetElement',
-    inputs=['optional_input'],
-    outputs=['output']
-)
-output = optional_get_element_reference_implementation(optional)
-expect(node, inputs=[optional], outputs=[output],
-       input_type_protos=[input_type_proto],
-       name='test_optional_get_element_sequence')
-```
-
-</details>
-<details>
-<summary>get_element_tensor</summary>
-
-```python
-optional = np.array([1, 2, 3, 4]).astype(np.float32)
-tensor_type_proto = onnx.helper.make_tensor_type_proto(elem_type=onnx.TensorProto.FLOAT, shape=[4, ])
-input_type_proto = onnx.helper.make_optional_type_proto(tensor_type_proto)
-
-node = onnx.helper.make_node(
-    'OptionalGetElement',
-    inputs=['optional_input'],
-    outputs=['output']
-)
-output = optional_get_element_reference_implementation(optional)
-expect(node, inputs=[optional], outputs=[output],
-       input_type_protos=[input_type_proto],
-       name='test_optional_get_element')
-```
-
-</details>
-<details>
-<summary>optionalhaselement</summary>
-
-```python
-optional = np.array([1, 2, 3, 4]).astype(np.float32)
-tensor_type_proto = onnx.helper.make_tensor_type_proto(elem_type=onnx.TensorProto.FLOAT, shape=[4, ])
-input_type_proto = onnx.helper.make_optional_type_proto(tensor_type_proto)
-node = onnx.helper.make_node(
-    'OptionalHasElement',
-    inputs=['optional_input'],
-    outputs=['output']
-)
-output = optional_has_element_reference_implementation(optional)
-expect(node, inputs=[optional], outputs=[output],
-       input_type_protos=[input_type_proto],
-       name='test_optional_has_element')
-```
-
-</details>
-
-
 ### Or
 There are 2 test cases, listed as following:
 <details>
@@ -8332,22 +7827,22 @@ node = onnx.helper.make_node(
 )
 
 # 2d
-x = (np.random.randn(3, 4) > 0).astype(bool)
-y = (np.random.randn(3, 4) > 0).astype(bool)
+x = (np.random.randn(3, 4) > 0).astype(np.bool)
+y = (np.random.randn(3, 4) > 0).astype(np.bool)
 z = np.logical_or(x, y)
 expect(node, inputs=[x, y], outputs=[z],
        name='test_or2d')
 
 # 3d
-x = (np.random.randn(3, 4, 5) > 0).astype(bool)
-y = (np.random.randn(3, 4, 5) > 0).astype(bool)
+x = (np.random.randn(3, 4, 5) > 0).astype(np.bool)
+y = (np.random.randn(3, 4, 5) > 0).astype(np.bool)
 z = np.logical_or(x, y)
 expect(node, inputs=[x, y], outputs=[z],
        name='test_or3d')
 
 # 4d
-x = (np.random.randn(3, 4, 5, 6) > 0).astype(bool)
-y = (np.random.randn(3, 4, 5, 6) > 0).astype(bool)
+x = (np.random.randn(3, 4, 5, 6) > 0).astype(np.bool)
+y = (np.random.randn(3, 4, 5, 6) > 0).astype(np.bool)
 z = np.logical_or(x, y)
 expect(node, inputs=[x, y], outputs=[z],
        name='test_or4d')
@@ -8365,36 +7860,36 @@ node = onnx.helper.make_node(
 )
 
 # 3d vs 1d
-x = (np.random.randn(3, 4, 5) > 0).astype(bool)
-y = (np.random.randn(5) > 0).astype(bool)
+x = (np.random.randn(3, 4, 5) > 0).astype(np.bool)
+y = (np.random.randn(5) > 0).astype(np.bool)
 z = np.logical_or(x, y)
 expect(node, inputs=[x, y], outputs=[z],
        name='test_or_bcast3v1d')
 
 # 3d vs 2d
-x = (np.random.randn(3, 4, 5) > 0).astype(bool)
-y = (np.random.randn(4, 5) > 0).astype(bool)
+x = (np.random.randn(3, 4, 5) > 0).astype(np.bool)
+y = (np.random.randn(4, 5) > 0).astype(np.bool)
 z = np.logical_or(x, y)
 expect(node, inputs=[x, y], outputs=[z],
        name='test_or_bcast3v2d')
 
 # 4d vs 2d
-x = (np.random.randn(3, 4, 5, 6) > 0).astype(bool)
-y = (np.random.randn(5, 6) > 0).astype(bool)
+x = (np.random.randn(3, 4, 5, 6) > 0).astype(np.bool)
+y = (np.random.randn(5, 6) > 0).astype(np.bool)
 z = np.logical_or(x, y)
 expect(node, inputs=[x, y], outputs=[z],
        name='test_or_bcast4v2d')
 
 # 4d vs 3d
-x = (np.random.randn(3, 4, 5, 6) > 0).astype(bool)
-y = (np.random.randn(4, 5, 6) > 0).astype(bool)
+x = (np.random.randn(3, 4, 5, 6) > 0).astype(np.bool)
+y = (np.random.randn(4, 5, 6) > 0).astype(np.bool)
 z = np.logical_or(x, y)
 expect(node, inputs=[x, y], outputs=[z],
        name='test_or_bcast4v3d')
 
 # 4d vs 4d
-x = (np.random.randn(1, 4, 1, 6) > 0).astype(bool)
-y = (np.random.randn(3, 1, 5, 6) > 0).astype(bool)
+x = (np.random.randn(1, 4, 1, 6) > 0).astype(np.bool)
+y = (np.random.randn(3, 1, 5, 6) > 0).astype(np.bool)
 z = np.logical_or(x, y)
 expect(node, inputs=[x, y], outputs=[z],
        name='test_or_bcast4v4d')
@@ -11252,9 +10747,9 @@ expect(node, inputs=[x, sequence_lens], outputs=[y],
 
 
 ### RoiAlign
-There are 2 test cases, listed as following:
+There are 1 test cases, listed as following:
 <details>
-<summary>roialign_aligned_false</summary>
+<summary>roialign</summary>
 
 ```python
 node = onnx.helper.make_node(
@@ -11265,10 +10760,139 @@ node = onnx.helper.make_node(
     output_height=5,
     output_width=5,
     sampling_ratio=2,
-    coordinate_transformation_mode="output_half_pixel",
 )
 
-X, batch_indices, rois = get_roi_align_input_values()
+X = np.array(
+    [
+        [
+            [
+                [
+                    0.2764,
+                    0.7150,
+                    0.1958,
+                    0.3416,
+                    0.4638,
+                    0.0259,
+                    0.2963,
+                    0.6518,
+                    0.4856,
+                    0.7250,
+                ],
+                [
+                    0.9637,
+                    0.0895,
+                    0.2919,
+                    0.6753,
+                    0.0234,
+                    0.6132,
+                    0.8085,
+                    0.5324,
+                    0.8992,
+                    0.4467,
+                ],
+                [
+                    0.3265,
+                    0.8479,
+                    0.9698,
+                    0.2471,
+                    0.9336,
+                    0.1878,
+                    0.4766,
+                    0.4308,
+                    0.3400,
+                    0.2162,
+                ],
+                [
+                    0.0206,
+                    0.1720,
+                    0.2155,
+                    0.4394,
+                    0.0653,
+                    0.3406,
+                    0.7724,
+                    0.3921,
+                    0.2541,
+                    0.5799,
+                ],
+                [
+                    0.4062,
+                    0.2194,
+                    0.4473,
+                    0.4687,
+                    0.7109,
+                    0.9327,
+                    0.9815,
+                    0.6320,
+                    0.1728,
+                    0.6119,
+                ],
+                [
+                    0.3097,
+                    0.1283,
+                    0.4984,
+                    0.5068,
+                    0.4279,
+                    0.0173,
+                    0.4388,
+                    0.0430,
+                    0.4671,
+                    0.7119,
+                ],
+                [
+                    0.1011,
+                    0.8477,
+                    0.4726,
+                    0.1777,
+                    0.9923,
+                    0.4042,
+                    0.1869,
+                    0.7795,
+                    0.9946,
+                    0.9689,
+                ],
+                [
+                    0.1366,
+                    0.3671,
+                    0.7011,
+                    0.6234,
+                    0.9867,
+                    0.5585,
+                    0.6985,
+                    0.5609,
+                    0.8788,
+                    0.9928,
+                ],
+                [
+                    0.5697,
+                    0.8511,
+                    0.6711,
+                    0.9406,
+                    0.8751,
+                    0.7496,
+                    0.1650,
+                    0.1049,
+                    0.1559,
+                    0.2514,
+                ],
+                [
+                    0.7012,
+                    0.4056,
+                    0.7879,
+                    0.3461,
+                    0.0415,
+                    0.2998,
+                    0.5094,
+                    0.3727,
+                    0.5482,
+                    0.0502,
+                ],
+            ]
+        ]
+    ],
+    dtype=np.float32,
+)
+batch_indices = np.array([0, 0, 0], dtype=np.int64)
+rois = np.array([[0, 0, 9, 9], [0, 5, 4, 9], [5, 5, 9, 9]], dtype=np.float32)
 # (num_rois, C, output_height, output_width)
 Y = np.array(
     [
@@ -11303,61 +10927,7 @@ Y = np.array(
     dtype=np.float32,
 )
 
-expect(node, inputs=[X, rois, batch_indices], outputs=[Y], name="test_roialign_aligned_false")
-```
-
-</details>
-<details>
-<summary>roialign_aligned_true</summary>
-
-```python
-node = onnx.helper.make_node(
-    "RoiAlign",
-    inputs=["X", "rois", "batch_indices"],
-    outputs=["Y"],
-    spatial_scale=1.0,
-    output_height=5,
-    output_width=5,
-    sampling_ratio=2,
-    coordinate_transformation_mode="half_pixel",
-)
-
-X, batch_indices, rois = get_roi_align_input_values()
-# (num_rois, C, output_height, output_width)
-Y = np.array(
-    [
-        [
-            [
-                [0.5178, 0.3434, 0.3229, 0.4474, 0.6344],
-                [0.4031, 0.5366, 0.4428, 0.4861, 0.4023],
-                [0.2512, 0.4002, 0.5155, 0.6954, 0.3465],
-                [0.3350, 0.4601, 0.5881, 0.3439, 0.6849],
-                [0.4932, 0.7141, 0.8217, 0.4719, 0.4039],
-            ]
-        ],
-        [
-            [
-                [0.3070, 0.2187, 0.3337, 0.4880, 0.4870],
-                [0.1871, 0.4914, 0.5561, 0.4192, 0.3686],
-                [0.1433, 0.4608, 0.5971, 0.5310, 0.4982],
-                [0.2788, 0.4386, 0.6022, 0.7000, 0.7524],
-                [0.5774, 0.7024, 0.7251, 0.7338, 0.8163],
-            ]
-        ],
-        [
-            [
-                [0.2393, 0.4075, 0.3379, 0.2525, 0.4743],
-                [0.3671, 0.2702, 0.4105, 0.6419, 0.8308],
-                [0.5556, 0.4543, 0.5564, 0.7502, 0.9300],
-                [0.6626, 0.5617, 0.4813, 0.4954, 0.6663],
-                [0.6636, 0.3721, 0.2056, 0.1928, 0.2478],
-            ]
-        ],
-    ],
-    dtype=np.float32,
-)
-
-expect(node, inputs=[X, rois, batch_indices], outputs=[Y], name="test_roialign_aligned_true")
+expect(node, inputs=[X, rois, batch_indices], outputs=[Y], name="test_roialign")
 ```
 
 </details>
@@ -11546,7 +11116,7 @@ expect(node, inputs=[data, indices, updates], outputs=[y],
 
 
 ### ScatterElements
-There are 4 test cases, listed as following:
+There are 3 test cases, listed as following:
 <details>
 <summary>scatter_elements_with_axis</summary>
 
@@ -11568,31 +11138,6 @@ y = scatter_elements(data, indices, updates, axis)
 
 expect(node, inputs=[data, indices, updates], outputs=[y],
        name='test_scatter_elements_with_axis')
-```
-
-</details>
-<details>
-<summary>scatter_elements_with_duplicate_indices</summary>
-
-```python
-axis = 1
-node = onnx.helper.make_node(
-    'ScatterElements',
-    inputs=['data', 'indices', 'updates'],
-    outputs=['y'],
-    axis=axis,
-    reduction='add',
-)
-data = np.array([[1.0, 2.0, 3.0, 4.0, 5.0]], dtype=np.float32)
-indices = np.array([[1, 1]], dtype=np.int64)
-updates = np.array([[1.1, 2.1]], dtype=np.float32)
-
-y = scatter_elements(data, indices, updates, axis, reduction='add')
-# print(y) produces
-# [[1.0, 5.2, 3.0, 4.0, 5.0]]
-
-expect(node, inputs=[data, indices, updates], outputs=[y],
-        name='test_scatter_elements_with_duplicate_indices')
 ```
 
 </details>
@@ -11647,7 +11192,7 @@ expect(node, inputs=[data, indices, updates], outputs=[y],
 
 
 ### ScatterND
-There are 3 test cases, listed as following:
+There are 1 test cases, listed as following:
 <details>
 <summary>scatternd</summary>
 
@@ -11674,66 +11219,6 @@ updates = np.array(
 output = scatter_nd_impl(data, indices, updates)
 expect(node, inputs=[data, indices, updates], outputs=[output],
        name='test_scatternd')
-```
-
-</details>
-<details>
-<summary>scatternd_add</summary>
-
-```python
-node = onnx.helper.make_node(
-    'ScatterND',
-    inputs=['data', 'indices', 'updates'],
-    outputs=['y'],
-    reduction='add',
-)
-data = np.array(
-    [[[1, 2, 3, 4], [5, 6, 7, 8], [8, 7, 6, 5], [4, 3, 2, 1]],
-        [[1, 2, 3, 4], [5, 6, 7, 8], [8, 7, 6, 5], [4, 3, 2, 1]],
-        [[8, 7, 6, 5], [4, 3, 2, 1], [1, 2, 3, 4], [5, 6, 7, 8]],
-        [[8, 7, 6, 5], [4, 3, 2, 1], [1, 2, 3, 4], [5, 6, 7, 8]]], dtype=np.float32)
-indices = np.array([[0], [0]], dtype=np.int64)
-updates = np.array(
-    [[[5, 5, 5, 5], [6, 6, 6, 6], [7, 7, 7, 7], [8, 8, 8, 8]],
-        [[1, 1, 1, 1], [2, 2, 2, 2], [3, 3, 3, 3], [4, 4, 4, 4]]], dtype=np.float32)
-# Expecting output as np.array(
-#    [[[7, 8, 9, 10], [13, 14, 15, 16], [18, 17, 16, 15], [16, 15, 14, 13]],
-#     [[1, 2, 3, 4], [5, 6, 7, 8], [8, 7, 6, 5], [4, 3, 2, 1]],
-#     [[1, 1, 1, 1], [2, 2, 2, 2], [3, 3, 3, 3], [4, 4, 4, 4]],
-#     [[8, 7, 6, 5], [4, 3, 2, 1], [1, 2, 3, 4], [5, 6, 7, 8]]], dtype=np.float32)
-output = scatter_nd_impl(data, indices, updates, reduction='add')
-expect(node, inputs=[data, indices, updates], outputs=[output],
-       name='test_scatternd_add')
-```
-
-</details>
-<details>
-<summary>scatternd_multiply</summary>
-
-```python
-node = onnx.helper.make_node(
-    'ScatterND',
-    inputs=['data', 'indices', 'updates'],
-    outputs=['y'],
-    reduction='mul',
-)
-data = np.array(
-    [[[1, 2, 3, 4], [5, 6, 7, 8], [8, 7, 6, 5], [4, 3, 2, 1]],
-        [[1, 2, 3, 4], [5, 6, 7, 8], [8, 7, 6, 5], [4, 3, 2, 1]],
-        [[8, 7, 6, 5], [4, 3, 2, 1], [1, 2, 3, 4], [5, 6, 7, 8]],
-        [[8, 7, 6, 5], [4, 3, 2, 1], [1, 2, 3, 4], [5, 6, 7, 8]]], dtype=np.float32)
-indices = np.array([[0], [0]], dtype=np.int64)
-updates = np.array(
-    [[[5, 5, 5, 5], [6, 6, 6, 6], [7, 7, 7, 7], [8, 8, 8, 8]],
-        [[1, 1, 1, 1], [2, 2, 2, 2], [3, 3, 3, 3], [4, 4, 4, 4]]], dtype=np.float32)
-# Expecting output as np.array(
-#    [[[5, 10, 15, 20], [60, 72, 84, 96], [168, 147, 126, 105], [128, 96, 64, 32]],
-#     [[1, 2, 3, 4], [5, 6, 7, 8], [8, 7, 6, 5], [4, 3, 2, 1]],
-#     [[1, 1, 1, 1], [2, 2, 2, 2], [3, 3, 3, 3], [4, 4, 4, 4]],
-#     [[8, 7, 6, 5], [4, 3, 2, 1], [1, 2, 3, 4], [5, 6, 7, 8]]], dtype=np.float32)
-output = scatter_nd_impl(data, indices, updates, reduction='mul')
-expect(node, inputs=[data, indices, updates], outputs=[output],
-       name='test_scatternd_multiply')
 ```
 
 </details>
@@ -11832,31 +11317,28 @@ There are 1 test cases, listed as following:
 <summary>shape</summary>
 
 ```python
+node = onnx.helper.make_node(
+    'Shape',
+    inputs=['x'],
+    outputs=['y'],
+)
+
 x = np.array([
     [1, 2, 3],
     [4, 5, 6],
 ]).astype(np.float32)
-test_shape('_example', x)  # preserve names of original test cases
+y = np.array([
+    2, 3,
+]).astype(np.int64)
+
+expect(node, inputs=[x], outputs=[y],
+       name='test_shape_example')
 
 x = np.random.randn(3, 4, 5).astype(np.float32)
+y = np.array(x.shape).astype(np.int64)
 
-test_shape('', x)  # preserve names of original test cases
-
-test_shape('_start_1', x, start=1)
-
-test_shape('_end_1', x, end=1)
-
-test_shape('_start_negative_1', x, start=-1)
-
-test_shape('_end_negative_1', x, end=-1)
-
-test_shape('_start_1_end_negative_1', x, start=1, end=-1)
-
-test_shape('_start_1_end_2', x, start=1, end=2)
-
-test_shape('_clip_start', x, start=-10)
-
-test_shape('_clip_end', x, end=10)
+expect(node, inputs=[x], outputs=[y],
+       name='test_shape')
 ```
 
 </details>
@@ -13491,8 +12973,8 @@ There are 6 test cases, listed as following:
 <summary>monday_casesensintive_lower</summary>
 
 ```python
-input = np.array([u'monday', u'tuesday', u'wednesday', u'thursday']).astype(object)
-output = np.array([u'tuesday', u'wednesday', u'thursday']).astype(object)
+input = np.array([u'monday', u'tuesday', u'wednesday', u'thursday']).astype(np.object)
+output = np.array([u'tuesday', u'wednesday', u'thursday']).astype(np.object)
 stopwords = [u'monday']
 
 node = onnx.helper.make_node(
@@ -13511,8 +12993,8 @@ expect(node, inputs=[input], outputs=[output], name='test_strnormalizer_export_m
 <summary>monday_casesensintive_nochangecase</summary>
 
 ```python
-input = np.array([u'monday', u'tuesday', u'wednesday', u'thursday']).astype(object)
-output = np.array([u'tuesday', u'wednesday', u'thursday']).astype(object)
+input = np.array([u'monday', u'tuesday', u'wednesday', u'thursday']).astype(np.object)
+output = np.array([u'tuesday', u'wednesday', u'thursday']).astype(np.object)
 stopwords = [u'monday']
 
 node = onnx.helper.make_node(
@@ -13530,8 +13012,8 @@ expect(node, inputs=[input], outputs=[output], name='test_strnormalizer_export_m
 <summary>monday_casesensintive_upper</summary>
 
 ```python
-input = np.array([u'monday', u'tuesday', u'wednesday', u'thursday']).astype(object)
-output = np.array([u'TUESDAY', u'WEDNESDAY', u'THURSDAY']).astype(object)
+input = np.array([u'monday', u'tuesday', u'wednesday', u'thursday']).astype(np.object)
+output = np.array([u'TUESDAY', u'WEDNESDAY', u'THURSDAY']).astype(np.object)
 stopwords = [u'monday']
 
 node = onnx.helper.make_node(
@@ -13550,8 +13032,8 @@ expect(node, inputs=[input], outputs=[output], name='test_strnormalizer_export_m
 <summary>monday_empty_output</summary>
 
 ```python
-input = np.array([u'monday', u'monday']).astype(object)
-output = np.array([u'']).astype(object)
+input = np.array([u'monday', u'monday']).astype(np.object)
+output = np.array([u'']).astype(np.object)
 stopwords = [u'monday']
 
 node = onnx.helper.make_node(
@@ -13570,12 +13052,12 @@ expect(node, inputs=[input], outputs=[output], name='test_strnormalizer_export_m
 <summary>monday_insensintive_upper_twodim</summary>
 
 ```python
-input = np.array([u'Monday', u'tuesday', u'wednesday', u'Monday', u'tuesday', u'wednesday']).astype(object).reshape([1, 6])
+input = np.array([u'Monday', u'tuesday', u'wednesday', u'Monday', u'tuesday', u'wednesday']).astype(np.object).reshape([1, 6])
 
 # It does upper case cecedille, accented E
 # and german umlaut but fails
 # with german eszett
-output = np.array([u'TUESDAY', u'WEDNESDAY', u'TUESDAY', u'WEDNESDAY']).astype(object).reshape([1, 4])
+output = np.array([u'TUESDAY', u'WEDNESDAY', u'TUESDAY', u'WEDNESDAY']).astype(np.object).reshape([1, 4])
 stopwords = [u'monday']
 
 node = onnx.helper.make_node(
@@ -13593,7 +13075,7 @@ expect(node, inputs=[input], outputs=[output], name='test_strnormalizer_export_m
 <summary>nostopwords_nochangecase</summary>
 
 ```python
-input = np.array([u'monday', u'tuesday']).astype(object)
+input = np.array([u'monday', u'tuesday']).astype(np.object)
 output = input
 
 # No stopwords. This is a NOOP
@@ -15016,7 +14498,7 @@ node = onnx.helper.make_node(
     outputs=['z'],
 )
 
-condition = np.array([[1, 0], [1, 1]], dtype=bool)
+condition = np.array([[1, 0], [1, 1]], dtype=np.bool)
 x = np.array([[1, 2], [3, 4]], dtype=np.int64)
 y = np.array([[9, 8], [7, 6]], dtype=np.int64)
 z = np.where(condition, x, y)  # expected output [[1, 8], [3, 4]]
@@ -15035,7 +14517,7 @@ node = onnx.helper.make_node(
     outputs=['z'],
 )
 
-condition = np.array([[1, 0], [1, 1]], dtype=bool)
+condition = np.array([[1, 0], [1, 1]], dtype=np.bool)
 x = np.array([[1, 2], [3, 4]], dtype=np.float32)
 y = np.array([[9, 8], [7, 6]], dtype=np.float32)
 z = np.where(condition, x, y)  # expected output [[1, 8], [3, 4]]
@@ -15059,22 +14541,22 @@ node = onnx.helper.make_node(
 )
 
 # 2d
-x = (np.random.randn(3, 4) > 0).astype(bool)
-y = (np.random.randn(3, 4) > 0).astype(bool)
+x = (np.random.randn(3, 4) > 0).astype(np.bool)
+y = (np.random.randn(3, 4) > 0).astype(np.bool)
 z = np.logical_xor(x, y)
 expect(node, inputs=[x, y], outputs=[z],
        name='test_xor2d')
 
 # 3d
-x = (np.random.randn(3, 4, 5) > 0).astype(bool)
-y = (np.random.randn(3, 4, 5) > 0).astype(bool)
+x = (np.random.randn(3, 4, 5) > 0).astype(np.bool)
+y = (np.random.randn(3, 4, 5) > 0).astype(np.bool)
 z = np.logical_xor(x, y)
 expect(node, inputs=[x, y], outputs=[z],
        name='test_xor3d')
 
 # 4d
-x = (np.random.randn(3, 4, 5, 6) > 0).astype(bool)
-y = (np.random.randn(3, 4, 5, 6) > 0).astype(bool)
+x = (np.random.randn(3, 4, 5, 6) > 0).astype(np.bool)
+y = (np.random.randn(3, 4, 5, 6) > 0).astype(np.bool)
 z = np.logical_xor(x, y)
 expect(node, inputs=[x, y], outputs=[z],
        name='test_xor4d')
@@ -15092,36 +14574,36 @@ node = onnx.helper.make_node(
 )
 
 # 3d vs 1d
-x = (np.random.randn(3, 4, 5) > 0).astype(bool)
-y = (np.random.randn(5) > 0).astype(bool)
+x = (np.random.randn(3, 4, 5) > 0).astype(np.bool)
+y = (np.random.randn(5) > 0).astype(np.bool)
 z = np.logical_xor(x, y)
 expect(node, inputs=[x, y], outputs=[z],
        name='test_xor_bcast3v1d')
 
 # 3d vs 2d
-x = (np.random.randn(3, 4, 5) > 0).astype(bool)
-y = (np.random.randn(4, 5) > 0).astype(bool)
+x = (np.random.randn(3, 4, 5) > 0).astype(np.bool)
+y = (np.random.randn(4, 5) > 0).astype(np.bool)
 z = np.logical_xor(x, y)
 expect(node, inputs=[x, y], outputs=[z],
        name='test_xor_bcast3v2d')
 
 # 4d vs 2d
-x = (np.random.randn(3, 4, 5, 6) > 0).astype(bool)
-y = (np.random.randn(5, 6) > 0).astype(bool)
+x = (np.random.randn(3, 4, 5, 6) > 0).astype(np.bool)
+y = (np.random.randn(5, 6) > 0).astype(np.bool)
 z = np.logical_xor(x, y)
 expect(node, inputs=[x, y], outputs=[z],
        name='test_xor_bcast4v2d')
 
 # 4d vs 3d
-x = (np.random.randn(3, 4, 5, 6) > 0).astype(bool)
-y = (np.random.randn(4, 5, 6) > 0).astype(bool)
+x = (np.random.randn(3, 4, 5, 6) > 0).astype(np.bool)
+y = (np.random.randn(4, 5, 6) > 0).astype(np.bool)
 z = np.logical_xor(x, y)
 expect(node, inputs=[x, y], outputs=[z],
        name='test_xor_bcast4v3d')
 
 # 4d vs 4d
-x = (np.random.randn(1, 4, 1, 6) > 0).astype(bool)
-y = (np.random.randn(3, 1, 5, 6) > 0).astype(bool)
+x = (np.random.randn(1, 4, 1, 6) > 0).astype(np.bool)
+y = (np.random.randn(3, 1, 5, 6) > 0).astype(np.bool)
 z = np.logical_xor(x, y)
 expect(node, inputs=[x, y], outputs=[z],
        name='test_xor_bcast4v4d')
@@ -15155,12 +14637,6 @@ expect(node, inputs=[x, y], outputs=[z],
 
 
 ### Multinomial (random generator operator)
-
-
-### Optional (call for test cases)
-
-
-### OptionalGetElement (call for test cases)
 
 
 ### RandomNormal (random generator operator)

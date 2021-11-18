@@ -159,11 +159,7 @@ class LocalFileSystem(LocalPath, BaseFileSystem):
         return StatData(file_length)
 
     def walk(self, top, topdown=True, onerror=None):
-        # Note on followlinks=True: per the tensorboard documentation [1], users are encouraged to
-        # use symlink trees to have fine-grained control over the filesystem layout of runs. To
-        # support such trees, we must follow links.
-        # [1] https://github.com/tensorflow/tensorboard/blob/master/README.md#logdir--logdir_spec-legacy-mode
-        yield from os.walk(top, topdown, onerror, followlinks=True)
+        yield from os.walk(top, topdown, onerror)
 
 class S3FileSystem(RemotePath, BaseFileSystem):
     """Provides filesystem access to S3."""

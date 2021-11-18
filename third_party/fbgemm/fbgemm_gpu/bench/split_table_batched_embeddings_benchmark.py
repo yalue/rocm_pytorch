@@ -5,11 +5,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import itertools
 import logging
-import math
-import random
-import statistics
 import time
 from typing import Callable, Dict, List, Optional, Tuple
 
@@ -17,17 +13,14 @@ import click
 import numpy as np
 import torch
 from fbgemm_gpu.split_table_batched_embeddings_ops import (
-    BoundsCheckMode,
     CacheAlgorithm,
     ComputeDevice,
-    DenseTableBatchedEmbeddingBagsCodegen,
     EmbeddingLocation,
     OptimType,
     SparseType,
     SplitTableBatchedEmbeddingBagsCodegen,
     IntNBitTableBatchedEmbeddingBagsCodegen,
 )
-from numpy.random import default_rng
 from torch import Tensor
 
 logging.basicConfig(level=logging.DEBUG)
@@ -40,7 +33,7 @@ PRECISION_SIZE_MULTIPLIER: Dict[SparseType, float] = {
 }
 
 
-def round_up(a: int, b: int) -> int:
+def div_round_up(a: int, b: int) -> int:
     return int((a + b - 1) // b) * b
 
 
@@ -75,46 +68,26 @@ def generate_requests(
     # inter-batch indices reuse rate
     reuse: float = 0.0,
     # alpha <= 1.0: use uniform distribution
-    # alpha > 1.0: use zipf distribution
+    # alpha > 1.0: use zjpf distribution
     alpha: float = 1.0,
     weights_precision: SparseType = SparseType.FP32,
     weighted: bool = False,
-) -> List[Tuple[torch.IntTensor, torch.IntTensor, Optional[Tensor]]]:
+) -> List[Tuple[Tensor, Tensor, Optional[Tensor]]]:
     if alpha <= 1.0:
         all_indices = torch.randint(
             low=0,
             high=E,
-            size=(iters, T, B, L),
+            size=(iters, T, B * L),
             device=get_device(),
             dtype=torch.int32,
         )
-        # each bag is usually sorted
-        (all_indices, _) = torch.sort(all_indices)
-        all_indices = all_indices.reshape(iters, T, B * L)
     else:
-        assert E >= L, "num-embeddings must be greater than equal to bag-size"
-        # oversample and then remove duplicates to obtain sampling without
-        # replacement
-        all_indices = (np.random.zipf(a=alpha, size=(iters, T, B, 3 * L)) - 1) % E
-        for index_tuple in itertools.product(range(iters), range(T), range(B)):
-            # sample without replacement from
-            # https://stats.stackexchange.com/questions/20590/how-do-i-sample-without-replacement-using-a-sampling-with-replacement-function
-            r = set()
-            for x in all_indices[index_tuple]:
-                if x not in r:
-                    r.add(x)
-                    if len(r) == L:
-                        break
-            assert (len(r)) == L, "too skewed distribution (alpha too big)"
-            all_indices[index_tuple][:L] = list(r)
-        # shuffle indices so we don't have unintended spatial locality
-        all_indices = torch.as_tensor(all_indices[:, :, :, :L])
-        rng = default_rng()
-        permutation = torch.as_tensor(
-            rng.choice(E, size=all_indices.max().item() + 1, replace=False)
+        all_indices = (
+            torch.as_tensor(np.random.zipf(a=alpha, size=(iters, T, B * L)))
+            .to(get_device())
+            .int()
+            % E
         )
-        all_indices = permutation.gather(0, all_indices.flatten())
-        all_indices = all_indices.to(get_device()).int().reshape(iters, T, B * L)
     for it in range(iters - 1):
         for t in range(T):
             reused_indices = torch.randperm(B * L, device=get_device())[
@@ -135,12 +108,11 @@ def generate_requests(
 
 
 def benchmark_requests(
-    requests: List[Tuple[torch.IntTensor, torch.IntTensor, Optional[Tensor]]],
+    requests: List[Tuple[Tensor, Tensor, Optional[Tensor]]],
     func: Callable[[Tensor, Tensor, Optional[Tensor]], Tensor],
     flush_gpu_cache_size_mb: int = 0,
-    check_median: bool = False,
 ) -> float:
-    times = []
+    total_time = 0.0
     if torch.cuda.is_available():
         torch.cuda.synchronize()
         start_event = torch.cuda.Event(enable_timing=True)
@@ -149,27 +121,21 @@ def benchmark_requests(
         start_time = time.time()
         if torch.cuda.is_available():
             if flush_gpu_cache_size_mb:
-                _ = torch.rand(
-                    flush_gpu_cache_size_mb * 1024 * 1024 // 4, dtype=torch.float
-                )
+                _ = torch.rand(flush_gpu_cache_size_mb * 1024 * 1024 // 4, dtype=torch.float)
                 torch.cuda.synchronize()
             start_event.record()
         func(indices, offsets, weights)
         if torch.cuda.is_available():
             end_event.record()
             torch.cuda.synchronize()
-            it_time = start_event.elapsed_time(end_event) * 1.0e-3
-            times.append(it_time)
+            total_time += start_event.elapsed_time(end_event) * 1.0e-3
         else:
-            it_time = time.time() - start_time
-            times.append(it_time)
-    avg_time = sum(times) / len(requests)
-    median_time = statistics.median(times)
-    return median_time if check_median else avg_time
+            total_time += time.time() - start_time
+    return total_time / len(requests)
 
 
 def benchmark_pipelined_requests(
-    requests: List[Tuple[torch.IntTensor, torch.IntTensor, Optional[Tensor]]],
+    requests: List[Tuple[Tensor, Tensor, Optional[Tensor]]],
     func1: Callable[[Tensor, Tensor, Optional[Tensor]], None],
     func2: Callable[[Tensor, Tensor, Optional[Tensor]], None],
     flush_gpu_cache_size_mb: int = 0,
@@ -187,9 +153,7 @@ def benchmark_pipelined_requests(
         requests, start_events, end_events
     ):
         if flush_gpu_cache_size_mb:
-            _ = torch.rand(
-                flush_gpu_cache_size_mb * 1024 * 1024 // 4, dtype=torch.float
-            )
+            _ = torch.rand(flush_gpu_cache_size_mb * 1024 * 1024 // 4, dtype=torch.float)
             torch.cuda.synchronize()
         start_event[0].record()
         func1(indices, offsets, indices_weights)
@@ -218,7 +182,6 @@ def cli() -> None:
 
 
 @cli.command()
-# recommended value: alpha=1.15 for training and alpha=1.09 for inference
 @click.option("--alpha", default=1.0)
 @click.option("--bag-size", default=20)
 @click.option("--batch-size", default=512)
@@ -235,7 +198,6 @@ def cli() -> None:
 @click.option("--weighted", is_flag=True, default=False)
 @click.option("--weighted-num-requires-grad", type=int, default=None)
 @click.option("--flush-gpu-cache-size-mb", default=0)
-@click.option("--dense", is_flag=True, default=False)
 def device(  # noqa C901
     alpha: float,
     bag_size: int,
@@ -253,7 +215,6 @@ def device(  # noqa C901
     weighted: bool,
     weighted_num_requires_grad: Optional[int],
     flush_gpu_cache_size_mb: int,
-    dense: bool,
 ) -> None:
     np.random.seed(42)
     torch.manual_seed(42)
@@ -278,7 +239,7 @@ def device(  # noqa C901
         feature_requires_grad = None
     if mixed:
         Ds = [
-            round_up(np.random.randint(low=int(0.5 * D), high=int(1.5 * D)), 4)
+            div_round_up(np.random.randint(low=int(0.5 * D), high=int(1.5 * D)), 4)
             for _ in range(T)
         ]
         D = np.average(Ds)
@@ -295,38 +256,22 @@ def device(  # noqa C901
     else:
         managed_option = EmbeddingLocation.MANAGED
 
-    if dense:
-        emb = DenseTableBatchedEmbeddingBagsCodegen(
-            [
-                (
-                    E,
-                    d,
-                )
-                for d in Ds
-            ],
-            use_cpu=not torch.cuda.is_available(),
-        )
-    else:
-        emb = SplitTableBatchedEmbeddingBagsCodegen(
-            [
-                (
-                    E,
-                    d,
-                    managed_option,
-                    ComputeDevice.CUDA
-                    if torch.cuda.is_available()
-                    else ComputeDevice.CPU,
-                )
-                for d in Ds
-            ],
-            optimizer=optimizer,
-            learning_rate=0.1,
-            eps=0.1,
-            weights_precision=weights_precision,
-            stochastic_rounding=stoc,
-        )
-    emb = emb.to(get_device())
-
+    emb = SplitTableBatchedEmbeddingBagsCodegen(
+        [
+            (
+                E,
+                d,
+                managed_option,
+                ComputeDevice.CUDA if torch.cuda.is_available() else ComputeDevice.CPU,
+            )
+            for d in Ds
+        ],
+        optimizer=optimizer,
+        learning_rate=0.1,
+        eps=0.1,
+        weights_precision=weights_precision,
+        stochastic_rounding=stoc,
+    ).to(get_device())
     if weights_precision == SparseType.INT8:
         emb.init_embedding_weights_uniform(-0.0003, 0.0003)
 
@@ -441,7 +386,7 @@ def uvm(
 
     if mixed:
         Ds = [
-            round_up(np.random.randint(low=int(0.5 * D), high=int(1.5 * D)), 4)
+            div_round_up(np.random.randint(low=int(0.5 * D), high=int(1.5 * D)), 4)
             for _ in range(T)
         ]
         D = np.average(Ds)
@@ -515,7 +460,6 @@ def uvm(
         weighted=weighted,
     )
 
-    requests_gpu = None
     if T_gpu > 0:
         requests_gpu = generate_requests(
             iters,
@@ -549,7 +493,6 @@ def uvm(
 
     if T_gpu > 0:
         requests = []
-        assert requests_gpu is not None
         for rs_uvm, rs_gpu in zip(requests_uvm, requests_gpu):
             indices = torch.cat([rs_uvm[0], rs_gpu[0]])
             lengths = [L_uvm] * (T_uvm * B) + [L] * (T_gpu * B)
@@ -565,6 +508,7 @@ def uvm(
 
         # forward
         time_per_iter = benchmark_requests(
+            # pyre-fixme[61]: `requests_gpu` may not be initialized here.
             requests_gpu,
             lambda indices, offsets, per_sample_weights: emb_gpu.forward(
                 indices.long(),
@@ -644,7 +588,7 @@ def cache(  # noqa C901
     cache_alg = CacheAlgorithm.LRU if cache_algorithm == "lru" else CacheAlgorithm.LFU
     if mixed:
         Ds = [
-            round_up(np.random.randint(low=int(0.5 * D), high=int(1.5 * D)), 4)
+            div_round_up(np.random.randint(low=int(0.5 * D), high=int(1.5 * D)), 4)
             for _ in range(T)
         ]
         D = np.average(Ds)
@@ -735,9 +679,7 @@ def cache(  # noqa C901
         emb.prefetch(indices.long(), offsets.long())
         exchanged_cache_lines.append(
             # pyre-fixme[16]: `bool` has no attribute `sum`.
-            (emb.lxu_cache_state != old_lxu_cache_state)
-            .sum()
-            .item()
+            (emb.lxu_cache_state != old_lxu_cache_state).sum().item()
         )
         cache_misses.append((emb.lxu_cache_locations_list[0] == NOT_FOUND).sum().item())
         emb.forward(indices.long(), offsets.long())
@@ -777,7 +719,7 @@ def cache(  # noqa C901
 
 
 def benchmark_cpu_requests(
-    requests: List[Tuple[torch.IntTensor, torch.IntTensor, Optional[torch.Tensor]]],
+    requests: List[Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]]],
     func: Callable[[Tensor, Tensor, Optional[Tensor]], Tensor],
 ) -> float:
     import time
@@ -834,7 +776,7 @@ def cpu(  # noqa C901
     if mixed:
         Ds = [
             # int4 table batched emb op can only handle mixed D where D is multiple of 8
-            round_up(np.random.randint(low=int(0.5 * D), high=int(1.5 * D)), 8)
+            div_round_up(np.random.randint(low=int(0.5 * D), high=int(1.5 * D)), 8)
             for _ in range(T)
         ]
         D = np.average(Ds)
@@ -842,11 +784,10 @@ def cpu(  # noqa C901
         Ds = [D] * T
 
     emb = IntNBitTableBatchedEmbeddingBagsCodegen(
-        [("", E, d, weights_precision, EmbeddingLocation.HOST) for d in Ds],
+        [(E, d, weights_precision) for d in Ds],
         use_cpu=True,
         index_remapping=[torch.arange(E) for _ in Ds] if index_remapping else None,
     ).cpu()
-    emb.fill_random_weights()
 
     nparams = sum(w.numel() for (w, _) in emb.split_embedding_weights())
     logging.info(
@@ -871,6 +812,9 @@ def cpu(  # noqa C901
     ]
 
     time_per_iter = benchmark_cpu_requests(
+        # pyre-fixme[6]: Expected `List[Tuple[Tensor, Tensor, Optional[Tensor]]]`
+        #  for 1st param but got `List[Tuple[torch.IntTensor, torch.IntTensor,
+        #  Optional[Tensor]]]`.
         requests,
         lambda indices, offsets, per_sample_weights: emb.forward(
             indices,
@@ -895,6 +839,7 @@ def cpu(  # noqa C901
 @click.option("--embedding-dim", default=128)
 @click.option("--weights-precision", type=SparseType, default=SparseType.INT4)
 @click.option("--stoc", is_flag=True, default=False)
+@click.option("--iters", default=100)
 @click.option("--managed", default="device")
 @click.option("--mixed", is_flag=True, default=False)
 @click.option("--num-embeddings", default=int(1e5))
@@ -903,14 +848,7 @@ def cpu(  # noqa C901
 @click.option("--row-wise/--no-row-wise", default=True)
 @click.option("--weighted", is_flag=True, default=False)
 @click.option("--weighted-num-requires-grad", type=int, default=None)
-@click.option("--bounds-check-mode", type=int, default=BoundsCheckMode.WARNING.value)
-@click.option("--pruning-ratio", type=float, default=None)
-@click.option("--load-factor", default=0.75)
-@click.option("--use-array-for-index-remapping", is_flag=True, default=True)
-@click.option("--check-median", is_flag=True, default=True)
-@click.option("--iters", default=100)
-@click.option("--runs-of-iters", default=5)
-@click.option("--warmup-runs", default=2)
+@click.option("--index-remapping", is_flag=True, default=False)
 def nbit_device(  # noqa C901
     alpha: float,
     bag_size: int,
@@ -918,6 +856,7 @@ def nbit_device(  # noqa C901
     embedding_dim: int,
     weights_precision: SparseType,
     stoc: bool,
+    iters: int,
     managed: str,
     mixed: bool,
     num_embeddings: int,
@@ -926,14 +865,7 @@ def nbit_device(  # noqa C901
     row_wise: bool,
     weighted: bool,
     weighted_num_requires_grad: Optional[int],
-    bounds_check_mode: int,
-    pruning_ratio: Optional[float],
-    load_factor: float,
-    use_array_for_index_remapping: bool,
-    check_median: bool,
-    iters: int,
-    runs_of_iters: int,
-    warmup_runs: int,
+    index_remapping: bool,
 ) -> None:
     np.random.seed(42)
     torch.manual_seed(42)
@@ -941,9 +873,7 @@ def nbit_device(  # noqa C901
     D = embedding_dim
     L = bag_size
     E = num_embeddings
-    original_E = E
     T = num_tables
-    index_remapping = None
     if weighted_num_requires_grad:
         assert weighted_num_requires_grad <= T
         weighted_requires_grad_tables = np.random.choice(
@@ -961,42 +891,17 @@ def nbit_device(  # noqa C901
     if mixed:
         # int4 table batched emb op can only handle mixed D where D is multiple of 8
         Ds = [
-            round_up(np.random.randint(low=int(0.5 * D), high=int(1.5 * D)), 8)
+            div_round_up(np.random.randint(low=int(0.5 * D), high=int(1.5 * D)), 8)
             for _ in range(T)
         ]
         D = np.average(Ds)
     else:
         Ds = [D] * T
 
-    mem_for_pruning = 0
-    if pruning_ratio:
-        assert pruning_ratio < 1 and pruning_ratio >= 0
-        E = math.ceil(E * (1.0 - pruning_ratio))
-        index_remapping = []
-        for _ in range(T):
-            mapping = torch.tensor([-1] * original_E, dtype=torch.int32)
-            selected_indices = random.sample(range(original_E), E)
-            for i, idx in enumerate(selected_indices):
-                mapping[idx] = i
-            index_remapping.append(mapping)
-            if use_array_for_index_remapping:
-                mem_for_pruning += mapping.numel() * 4
-            else:
-                mem_for_pruning += E / load_factor * 2 * 4
-
-    if managed == "device":
-        managed_option = EmbeddingLocation.DEVICE
-    else:
-        managed_option = EmbeddingLocation.MANAGED
-
     emb = IntNBitTableBatchedEmbeddingBagsCodegen(
-        [("", E, d, weights_precision, managed_option) for d in Ds],
-        bounds_check_mode=BoundsCheckMode(bounds_check_mode),
-        index_remapping=index_remapping,
-        load_factor=load_factor,
-        use_array_for_index_remapping=use_array_for_index_remapping,
+        [(E, d, weights_precision) for d in Ds],
+        index_remapping=[torch.arange(E) for _ in Ds] if index_remapping else None,
     ).cuda()
-    emb.fill_random_weights()
 
     nparams = sum(w.numel() for (w, _) in emb.split_embedding_weights())
     logging.info(
@@ -1005,56 +910,38 @@ def nbit_device(  # noqa C901
     )
     logging.info(f"Accessed weights per batch: {B * T * L * D * 0.5 / 1.0e6: .2f}MB")
 
-    times = []
-    for i in range(runs_of_iters):
-        requests = generate_requests(
-            iters,
-            B,
-            T,
-            L,
-            E,
-            reuse=reuse,
-            alpha=alpha,
-            weights_precision=weights_precision,
-            weighted=weighted,
-        )
-        requests = [(a.int(), b.int(), c if c else None) for (a, b, c) in requests]
+    requests = generate_requests(
+        iters,
+        B,
+        T,
+        L,
+        E,
+        reuse=reuse,
+        alpha=alpha,
+        weights_precision=weights_precision,
+        weighted=weighted,
+    )
+    requests = [(a.int(), b.int(), c if c else None) for (a, b, c) in requests]
 
-        # forward
-        time_per_iter = benchmark_requests(
-            requests,
-            lambda indices, offsets, per_sample_weights: emb.forward(
-                indices.int(),
-                offsets.int(),
-                per_sample_weights,
-                feature_requires_grad=feature_requires_grad,
-            ),
-            check_median=check_median,
-        )
+    # forward
+    time_per_iter = benchmark_requests(
+        # pyre-fixme[6]: Expected `List[Tuple[Tensor, Tensor, Optional[Tensor]]]`
+        #  for 1st param but got `List[Tuple[torch.IntTensor, torch.IntTensor,
+        #  Optional[Tensor]]]`.
+        requests,
+        lambda indices, offsets, per_sample_weights: emb.forward(
+            indices.int(),
+            offsets.int(),
+            per_sample_weights,
+            feature_requires_grad=feature_requires_grad,
+        ),
+    )
 
-        # free up GPU memory
-        del requests
-
-        logging.info(
-            f"Iteration {i}: "
-            f"{weights_precision} Forward, B: {B}, "
-            f"E: {E}, T: {T}, D: {D}, L: {L}, W: {weighted}, "
-            f"BW: {(2 * B * T * D + PRECISION_SIZE_MULTIPLIER[weights_precision] * B * T * L * D) / time_per_iter / 1.0e9: .2f}GB/s, "  # noqa: B950
-            f"T: {time_per_iter * 1.0e6:.0f}us, "
-            f"Memory Usage For Pruning: {mem_for_pruning / 1.0e6:.0f}MB"
-        )
-
-        if i >= warmup_runs:
-            times.append(time_per_iter)
-
-    time_per_iter = statistics.mean(times)
     logging.info(
-        f"Average of all iterations: "
         f"{weights_precision} Forward, B: {B}, "
         f"E: {E}, T: {T}, D: {D}, L: {L}, W: {weighted}, "
         f"BW: {(2 * B * T * D + PRECISION_SIZE_MULTIPLIER[weights_precision] * B * T * L * D) / time_per_iter / 1.0e9: .2f}GB/s, "  # noqa: B950
-        f"T: {time_per_iter * 1.0e6:.0f}us, "
-        f"Memory Usage For Pruning: {mem_for_pruning / 1.0e6:.0f}MB"
+        f"T: {time_per_iter * 1.0e6:.0f}us"
     )
 
 
@@ -1066,7 +953,7 @@ def nbit_device(  # noqa C901
 @click.option("--num-tables", default=100)
 @click.option("--load-factor", default=0.75)
 @click.option("--hit-rate", default=0.9)
-@click.option("--use-cpu", is_flag=True, default=False)
+
 def hashtable(  # noqa C901
     bag_size: int,
     batch_size: int,
@@ -1075,7 +962,6 @@ def hashtable(  # noqa C901
     num_tables: int,
     load_factor: float,
     hit_rate: float,
-    use_cpu: bool,
 ) -> None:
     B = batch_size
     T = num_tables
@@ -1084,125 +970,29 @@ def hashtable(  # noqa C901
     np.random.seed(42)
     torch.manual_seed(42)
     if hit_rate == 1.0:
-        chosen_indices = torch.cat([torch.arange(E) for _ in range(T)], dim=0).int()
+        chosen_indices = torch.cat(
+            [torch.arange(E) for _ in range(T)], dim=0
+        ).int()
     else:
-        chosen_indices = (
-            torch.randint(low=0, high=int(E * 1.0 / hit_rate), size=(E * T,))
-            .view(-1)
-            .int()
-        )
-    dense_indices = torch.cat([torch.arange(E) for _ in range(T)], dim=0).int()
+        chosen_indices = torch.randint(low=0, high=int(E * 1.0 / hit_rate), size=(E * T,)).view(-1).int()
+    dense_indices = torch.cat(
+        [torch.arange(E) for _ in range(T)], dim=0
+    ).int()
     offsets = torch.tensor([E * t for t in range(T + 1)]).int()
     assert offsets[-1] == chosen_indices.numel()
     assert offsets.numel() == T + 1
     assert (offsets.numel() - 1) // T == 1
-
-    capacities = [round_up(int(E / load_factor), 32) for _ in range(T)]
-
+    capacity = div_round_up(int(dense_indices.numel() * 1.0 / load_factor), 32)
     hash_table = torch.zeros(
-        (sum(capacities), 2),
+        (capacity, 3),
         dtype=torch.int32,
     )
-    hash_table_offsets = torch.tensor([0] + np.cumsum(capacities).tolist()).long()
-
     assert hash_table.numel() * 4 < 2 ** 32
     # initialize
     hash_table[:, :] = -1
-    torch.ops.fb.pruned_hashmap_insert(
-        chosen_indices, dense_indices, offsets, hash_table, hash_table_offsets
-    )
+    torch.ops.fb.pruned_hashmap_insert(chosen_indices, dense_indices, offsets, hash_table, T)
 
-    requests = generate_requests(
-        iters,
-        B,
-        T,
-        L,
-        E,
-    )
-
-    if not use_cpu:
-        hash_table = hash_table.cuda()
-        hash_table_offsets = hash_table_offsets.cuda()
-        requests = [(a.cuda().int(), b.cuda().int(), c) for (a, b, c) in requests]
-    else:
-        requests = [(a.int().cpu(), b.int().cpu(), c) for (a, b, c) in requests]
-
-    empirical_hit_rate = np.mean(
-        [
-            torch.ops.fb.pruned_hashmap_lookup(
-                indices, offsets, hash_table, hash_table_offsets
-            )
-            .ne(-1)
-            .sum()
-            .item()
-            / indices.numel()
-            for indices, offsets, _ in requests
-        ]
-    )
-
-    time_per_iter = benchmark_requests(
-        requests,
-        lambda indices, offsets, _: torch.ops.fb.pruned_hashmap_lookup(
-            indices, offsets, hash_table, hash_table_offsets
-        ),
-    )
-
-    logging.info(
-        f"LinearTable: B: {B}, T: {T}, L: {L}, E: {E}, QPS: {B * T * L / time_per_iter / 1.0e9:.2f}B QPS/s, "
-        f"T: {time_per_iter * 1.0e6:.0f}us, load factor: {E * T / hash_table.shape[0] * 100:.1f}%, hit rate: {empirical_hit_rate * 100:.2f}%, Table size: {hash_table.numel() * 4 / 1.0e6:.0f}MB"
-    )
-
-    if use_cpu:
-        ht = torch.classes.fb.PrunedMapCPU()
-        ht.insert(chosen_indices, dense_indices, offsets, T)
-
-        time_per_iter = benchmark_requests(
-            requests,
-            lambda indices, offsets, _: ht.lookup(indices, offsets),
-        )
-
-        logging.info(
-            f"HashTable: B: {B}, T: {T}, L: {L}, E: {E}, QPS: {B * T * L / time_per_iter / 1.0e9:.2f}B QPS/s, "
-            f"T: {time_per_iter * 1.0e6:.0f}us, load factor: {E * T / hash_table.shape[0] * 100:.1f}%, hit rate: {empirical_hit_rate * 100:.2f}%, Table size: {hash_table.numel() * 4 / 1.0e6:.0f}MB"
-        )
-
-
-@cli.command()
-@click.option("--bag-size", default=20)
-@click.option("--batch-size", default=2048)
-@click.option("--iters", default=100)
-@click.option("--num-embeddings", default=int(1e5))
-@click.option("--num-tables", default=100)
-@click.option("--pruning-ratio", default=0.9)
-def pruned_array(  # noqa C901
-    bag_size: int,
-    batch_size: int,
-    iters: int,
-    num_embeddings: int,
-    num_tables: int,
-    pruning_ratio: float,
-) -> None:
-    B = batch_size
-    T = num_tables
-    L = bag_size
-    E = num_embeddings
-    np.random.seed(42)
-    torch.manual_seed(42)
-    assert pruning_ratio > 0 and pruning_ratio <= 1
-    original_E = int(E / (1.0 - pruning_ratio))
-    index_remappings = torch.tensor(
-        [-1] * original_E * T, dtype=torch.int32, device="cuda"
-    )
-    index_remappings_offsets = torch.empty(T + 1, dtype=torch.int32, device="cuda")
-    index_remappings_offsets[0] = 0
-    dense_indicies = torch.tensor(range(E), dtype=torch.int32, device="cuda")
-    for t in range(T):
-        selected_indices = torch.add(
-            torch.randperm(original_E, device="cuda"), t * original_E
-        )[:E]
-        index_remappings[selected_indices] = dense_indicies
-        index_remappings_offsets[t + 1] = index_remappings_offsets[t] + original_E
-
+    hash_table = hash_table.cuda()
     requests = generate_requests(
         iters,
         B,
@@ -1212,72 +1002,24 @@ def pruned_array(  # noqa C901
     )
     requests = [(a.cuda().int(), b.cuda().int(), c) for (a, b, c) in requests]
 
+    empirical_hit_rate = np.mean([torch.ops.fb.pruned_hashmap_lookup(
+            indices.cuda().int(), offsets.cuda().int(), hash_table.cuda().contiguous(), T
+    ).ne(-1).sum().item() / indices.numel() for indices, offsets, _ in requests])
+
+
     time_per_iter = benchmark_requests(
+        # pyre-fixme[6]: Expected `List[Tuple[Tensor, Tensor, Optional[Tensor]]]`
+        #  for 1st param but got `List[Tuple[torch.IntTensor, torch.IntTensor,
+        #  Optional[Tensor]]]`.
         requests,
-        lambda indices, offsets, _: torch.ops.fb.pruned_array_lookup(
-            indices,
-            offsets,
-            index_remappings,
-            index_remappings_offsets,
+        lambda indices, offsets, _: torch.ops.fb.pruned_hashmap_lookup(
+            indices.cuda().int(), offsets.cuda().int().contiguous(), hash_table.cuda().int().contiguous(), T
         ),
     )
 
     logging.info(
-        f"LinearTable: B: {B}, T: {T}, L: {L}, E: {E}, QPS: {B * T * L / time_per_iter / 1.0e9:.2f}B QPS/s, "
-        f"T: {time_per_iter * 1.0e6:.0f}us, Pruning Ratio: {pruning_ratio * 100:.2f}%, Table size: {original_E * T * 4 / 1.0e6:.0f}MB"
-    )
-
-
-@cli.command()
-@click.option("--bag-size", default=20)
-@click.option("--batch-size", default=512)
-@click.option("--iters", default=100)
-@click.option("--num-embeddings", default=int(1e5))
-@click.option("--num-tables", default=32)
-@click.option("--bounds-check-mode", type=int, default=BoundsCheckMode.WARNING.value)
-def bounds_check_indices(  # noqa C901
-    bag_size: int,
-    batch_size: int,
-    iters: int,
-    num_embeddings: int,
-    num_tables: int,
-    bounds_check_mode: int,
-) -> None:
-    np.random.seed(42)
-    torch.manual_seed(42)
-    B = batch_size
-    L = bag_size
-    E = num_embeddings
-    T = num_tables
-
-    requests = generate_requests(
-        iters,
-        B,
-        T,
-        L,
-        E,
-    )
-    # requests = [(a.int(), b.int(), c if c else None) for (a, b, c) in requests]
-
-    warning = torch.tensor([0]).long().cuda()
-    rows_per_table = torch.tensor([E for _ in range(T)]).long().cuda()
-    # forward
-    time_per_iter = benchmark_requests(
-        requests,
-        lambda indices, offsets, _: torch.ops.fb.bounds_check_indices(
-            rows_per_table,
-            indices,
-            offsets,
-            BoundsCheckMode(bounds_check_mode),
-            warning,
-        ),
-    )
-
-    logging.info(
-        f"Bounds Check Indices:  B: {B}, "
-        f"E: {E}, T: {T}, L: {L}, "
-        f"BW: {(8 * B * T * L + 8 * (B * T + 1)) / time_per_iter / 1.0e9: .2f}GB/s, "  # noqa: B950
-        f"T: {time_per_iter * 1.0e6:.0f}us"
+        f"100% hit: B: {B}, T: {T}, L: {L}, E: {E}, QPS: {B * T * L / time_per_iter / 1.0e9:.2f}B QPS/s, "
+        f"T: {time_per_iter * 1.0e6:.0f}us, load factor: {E * T / capacity * 100:.1f}%, hit rate: {empirical_hit_rate * 100:.2f}%, Table size: {hash_table.numel() * 4 / 1.0e6:.0f}MB"
     )
 
 

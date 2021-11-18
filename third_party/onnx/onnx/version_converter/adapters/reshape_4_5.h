@@ -26,18 +26,16 @@ class Reshape_4_5 final : public RemoveConsumedInputs {
         data.emplace_back(shape);
       }
       // Add value as input to node
-      Node* constant = graph->create(kConstant);
-      constant->insertBefore(node);
-      constant->t_(kvalue, t);        
-      node->addInput(constant->output());
+      // Create Value
+      Value* v = graph->addInitializerAndInput(t);
+      node->addInput(v);
       // Remove kshape attribute
       node->removeAttribute(kshape);
     }
 
-    Node* adapt(std::shared_ptr<Graph> graph, Node* node) const override {
+    void adapt(std::shared_ptr<Graph> graph, Node* node) const override {
       RemoveConsumedInputs::adapt(graph, node);
 	    adapt_reshape_4_5(graph, node);
-      return node;
     }
 };
 

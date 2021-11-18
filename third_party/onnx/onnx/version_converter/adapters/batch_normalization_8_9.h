@@ -27,9 +27,8 @@ struct BatchNormalization_8_9 final : public Adapter {
       }
     }
 
-  Node* adapt(std::shared_ptr<Graph> graph, Node* node) const override {
+  void adapt(std::shared_ptr<Graph> graph, Node* node) const override {
     adapt_batch_normalization_8_9(graph, node);
-    return node;
   }
 };
 

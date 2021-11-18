@@ -18,9 +18,8 @@ struct SetIsTest final : public Adapter {
     node->i_(kis_test, 1);
   }
 
-  Node* adapt(std::shared_ptr<Graph> graph, Node* node) const override {
+  void adapt(std::shared_ptr<Graph> graph, Node* node) const override {
     adapt_set_is_test(graph, node);
-    return node;
   }
 };
 

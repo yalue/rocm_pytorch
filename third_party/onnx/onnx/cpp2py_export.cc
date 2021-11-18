@@ -6,12 +6,10 @@
 #include <pybind11/stl.h>
 #include <climits>
 #include <limits>
-#include <tuple>
 #include <unordered_map>
 
 #include "onnx/checker.h"
 #include "onnx/defs/function.h"
-#include "onnx/defs/parser.h"
 #include "onnx/defs/schema.h"
 #include "onnx/py_utils.h"
 #include "onnx/shape_inference/implementation.h"
@@ -20,16 +18,6 @@
 namespace ONNX_NAMESPACE {
 namespace py = pybind11;
 using namespace pybind11::literals;
-
-template <typename ProtoType>
-static std::tuple<bool, py::bytes, py::bytes> Parse(const char* cstr) {
-  ProtoType proto{};
-  OnnxParser parser(cstr);
-  auto status = parser.Parse(proto);
-  std::string out;
-  proto.SerializeToString(&out);
-  return std::make_tuple(status.IsOK(), py::bytes(status.ErrorMessage()), py::bytes(out));
-}
 
 PYBIND11_MODULE(onnx_cpp2py_export, onnx_cpp2py_export) {
   onnx_cpp2py_export.doc() = "Python interface to onnx";
@@ -67,9 +55,6 @@ PYBIND11_MODULE(onnx_cpp2py_export, onnx_cpp2py_export) {
       .def_property_readonly(
           "has_type_and_shape_inference_function",
           &OpSchema::has_type_and_shape_inference_function)
-      .def_property_readonly(
-          "has_data_propagation_function",
-          &OpSchema::has_data_propagation_function)
       .def_property_readonly(
           "type_constraints", &OpSchema::typeConstraintParams)
       .def_static(
@@ -162,9 +147,7 @@ PYBIND11_MODULE(onnx_cpp2py_export, onnx_cpp2py_export) {
       .value("TENSORS", AttributeProto::TENSORS)
       .value("GRAPHS", AttributeProto::GRAPHS)
       .value("SPARSE_TENSOR", AttributeProto::SPARSE_TENSOR)
-      .value("SPARSE_TENSORS", AttributeProto::SPARSE_TENSORS)
-      .value("TYPE_PROTO", AttributeProto::TYPE_PROTO)
-      .value("TYPE_PROTOS", AttributeProto::TYPE_PROTOS);
+      .value("SPARSE_TENSORS", AttributeProto::SPARSE_TENSORS);
 
   py::enum_<OpSchema::SupportType>(op_schema, "SupportType")
       .value("COMMON", OpSchema::SupportType::COMMON)
@@ -320,33 +303,24 @@ PYBIND11_MODULE(onnx_cpp2py_export, onnx_cpp2py_export) {
   py::register_exception<InferenceError>(shape_inference, "InferenceError");
 
 
-  shape_inference.def("infer_shapes", [](const py::bytes& bytes, bool check_type, bool strict_mode, bool data_prop) {
+  shape_inference.def("infer_shapes", [](const py::bytes& bytes, bool check_type, bool strict_mode) {
     ModelProto proto{};
     ParseProtoFromPyBytes(&proto, bytes);
-    ShapeInferenceOptions options {check_type, strict_mode == true ? 1 : 0, data_prop};
-    shape_inference::InferShapes(proto,
+    shape_inference::InferShapes(proto, check_type, 
                                  OpSchemaRegistry::Instance(),
-                                 options);
+                                 strict_mode == true ? 1 : 0);
     std::string out;
     proto.SerializeToString(&out);
     return py::bytes(out);
-  }, "bytes"_a, "check_type"_a = false, "strict_mode"_a = false, "data_prop"_a = false);
+  }, "bytes"_a, "check_type"_a = false, "strict_mode"_a = false);
 
   shape_inference.def(
       "infer_shapes_path",
-      [](const std::string& model_path, const std::string& output_path, bool check_type, bool strict_mode, bool data_prop)  -> void {
-        ShapeInferenceOptions options {check_type, strict_mode == true ? 1 : 0, data_prop};
-        shape_inference::InferShapes(model_path, output_path, 
+      [](const std::string& model_path, const std::string& output_path, bool check_type, bool strict_mode)  -> void {
+        shape_inference::InferShapes(model_path, check_type, output_path, 
                                      OpSchemaRegistry::Instance(),
-                                     options);
+                                     strict_mode == true ? 1 : 0);
       });
-
-  // Submodule `parser`
-  auto parser = onnx_cpp2py_export.def_submodule("parser");
-  parser.doc() = "Parser submodule";
-
-  parser.def("parse_model", Parse<ModelProto>);
-  parser.def("parse_graph", Parse<GraphProto>);
 }
 
 } // namespace ONNX_NAMESPACE

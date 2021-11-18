@@ -113,7 +113,6 @@ bool ActivityProfiler::applyNetFilterInternal(const std::string& name) {
   return false;
 }
 
-// This has dependence on CuptiActivityInterface
 ActivityProfiler::ActivityProfiler(CuptiActivityInterface& cupti, bool cpuOnly)
     : cupti_(cupti),
       flushOverhead_{0, 0},
@@ -322,9 +321,9 @@ inline void ActivityProfiler::handleRuntimeActivity(
   const GenericTraceActivity& ext =
       externalEvents_.correlatedActivity(activity->correlationId);
   int32_t tid = activity->threadId;
-  const auto& it = resourceInfo_.find({processId(), tid});
-  if (it != resourceInfo_.end()) {
-    tid = it->second.id;
+  const auto& it = threadInfo_.find(tid);
+  if (it != threadInfo_.end()) {
+    tid = it->second.tid;
   }
   RuntimeActivity runtimeActivity(activity, ext, tid);
   if (ext.correlationId() == 0 && outOfRange(runtimeActivity)) {
@@ -382,7 +381,6 @@ inline void ActivityProfiler::handleGpuActivity(
   VLOG(2) << ext.correlationId() << "," << act.correlationId() << ": "
           << act.name();
   if (!loggingDisabled(ext)) {
-    recordStream(act.deviceId(), act.resourceId());
     act.log(*logger);
     updateGpuNetSpan(act);
     /*
@@ -523,27 +521,29 @@ void ActivityProfiler::configure(
   }
 #endif // HAS_CUPTI
 
-  profileStartTime_ = config_->requestTimestamp();
-
+  profileStartTime_ = (config_->requestTimestamp() + config_->maxRequestAge()) +
+      config_->activitiesWarmupDuration();
   if (profileStartTime_ < now) {
-    LOG(ERROR) << "Not starting tracing - start timestamp is in the past. Time difference (ms): " << duration_cast<milliseconds>(now - profileStartTime_).count();
-  } else if ((profileStartTime_ - now) < config_->activitiesWarmupDuration()) {
-    LOG(ERROR) << "Not starting tracing - insufficient time for warmup. Time to warmup (ms): " << duration_cast<milliseconds>(profileStartTime_ - now).count() ;
-  } else {
-    if (profilers_.size() > 0) {
-      configureChildProfilers();
-    }
-    LOG(INFO) << "Tracing starting in "
-              << duration_cast<seconds>(profileStartTime_ - now).count() << "s";
-
-    traceBuffers_ = std::make_unique<ActivityBuffers>();
-    captureWindowStartTime_ = captureWindowEndTime_ = 0;
-    currentRunloopState_ = RunloopState::Warmup;
+    profileStartTime_ = now + config_->activitiesWarmupDuration();
   }
+
+  if (profilers_.size() > 0) {
+    configureChildProfilers();
+  }
+
+  LOG(INFO) << "Tracing starting in "
+            << duration_cast<seconds>(profileStartTime_ - now).count() << "s";
+
+  traceBuffers_ = std::make_unique<ActivityBuffers>();
+  captureWindowStartTime_ = captureWindowEndTime_ = 0;
+  currentRunloopState_ = RunloopState::Warmup;
 }
 
 void ActivityProfiler::startTraceInternal(const time_point<system_clock>& now) {
   captureWindowStartTime_ = libkineto::timeSinceEpoch(now);
+  if (libkineto::api().client()) {
+    libkineto::api().client()->start();
+  }
   VLOG(0) << "Warmup -> CollectTrace";
   for (auto& session: sessions_){
     LOG(INFO) << "Starting child profiler session";
@@ -599,7 +599,6 @@ const time_point<system_clock> ActivityProfiler::performRunLoopStep(
       break;
 
     case RunloopState::Warmup:
-      VLOG(1) << "State: Warmup";
 #ifdef HAS_CUPTI
       // Flushing can take a while so avoid doing it close to the start time
       if (!cpuOnly_ && nextWakeupTime < profileStartTime_) {
@@ -608,7 +607,9 @@ const time_point<system_clock> ActivityProfiler::performRunLoopStep(
 
       if (cupti_.stopCollection) {
         // Go to process trace to clear any outstanding buffers etc
-        LOG(WARNING) << "Trace terminated during warmup";
+        if (libkineto::api().client()) {
+          libkineto::api().client()->stop();
+        }
         std::lock_guard<std::mutex> guard(mutex_);
         stopTraceInternal(now);
         resetInternal();
@@ -627,12 +628,6 @@ const time_point<system_clock> ActivityProfiler::performRunLoopStep(
           LOG(INFO) << "Tracing started";
         }
         startTrace(now);
-        if (libkineto::api().client()) {
-          libkineto::api().client()->start();
-        }
-        if (nextWakeupTime > profileEndTime_) {
-          new_wakeup_time = profileEndTime_;
-        }
       } else if (nextWakeupTime > profileStartTime_) {
         new_wakeup_time = profileStartTime_;
       }
@@ -640,7 +635,6 @@ const time_point<system_clock> ActivityProfiler::performRunLoopStep(
       break;
 
     case RunloopState::CollectTrace:
-      VLOG(1) << "State: CollectTrace";
       // captureWindowStartTime_ can be set by external threads,
       // so recompute end time.
       // FIXME: Is this a good idea for synced start?
@@ -672,7 +666,6 @@ const time_point<system_clock> ActivityProfiler::performRunLoopStep(
       break;
 
     case RunloopState::ProcessTrace:
-      VLOG(1) << "State: ProcessTrace";
       // FIXME: Probably want to allow interruption here
       // for quickly handling trace request via synchronous API
       std::lock_guard<std::mutex> guard(mutex_);
@@ -695,26 +688,26 @@ void ActivityProfiler::finalizeTrace(const Config& config, ActivityLogger& logge
   }
 
   // Process names
-  int32_t pid = processId();
-  string process_name = processName(pid);
+  string process_name = processName(processId());
   if (!process_name.empty()) {
-    logger.handleDeviceInfo(
+    int32_t pid = processId();
+    logger.handleProcessInfo(
         {pid, process_name, "CPU"}, captureWindowStartTime_);
     if (!cpuOnly_) {
       // GPU events use device id as pid (0-7).
       constexpr int kMaxGpuCount = 8;
       for (int gpu = 0; gpu < kMaxGpuCount; gpu++) {
-        logger.handleDeviceInfo(
+        logger.handleProcessInfo(
             {gpu, process_name, fmt::format("GPU {}", gpu)},
             captureWindowStartTime_);
       }
     }
   }
 
-  // Thread & stream info
-  for (auto pair : resourceInfo_) {
-    const auto& resource = pair.second;
-    logger.handleResourceInfo(resource, captureWindowStartTime_);
+  // Thread info
+  for (auto pair : threadInfo_) {
+    const auto& thread_info = pair.second;
+    logger.handleThreadInfo(thread_info, captureWindowStartTime_);
   }
 
   for (const auto& iterations : traceSpans_) {

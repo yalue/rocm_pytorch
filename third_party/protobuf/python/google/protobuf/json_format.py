@@ -60,7 +60,6 @@ import sys
 
 import six
 
-from google.protobuf.internal import type_checkers
 from google.protobuf import descriptor
 from google.protobuf import symbol_database
 
@@ -195,6 +194,7 @@ class _Printer(object):
     self.preserving_proto_field_name = preserving_proto_field_name
     self.use_integers_for_enums = use_integers_for_enums
     self.descriptor_pool = descriptor_pool
+    # TODO(jieluo): change the float precision default to 8 valid digits.
     if float_precision:
       self.float_format = '.{}g'.format(float_precision)
     else:
@@ -245,7 +245,8 @@ class _Printer(object):
           js[name] = [self._FieldToJsonObject(field, k)
                       for k in value]
         elif field.is_extension:
-          name = '[%s]' % field.full_name
+          full_qualifier = field.full_name[:-len(field.name)]
+          name = '[%s%s]' % (full_qualifier, name)
           js[name] = self._FieldToJsonObject(field, value)
         else:
           js[name] = self._FieldToJsonObject(field, value)
@@ -264,7 +265,7 @@ class _Printer(object):
           else:
             name = field.json_name
           if name in js:
-            # Skip the field which has been serialized already.
+            # Skip the field which has been serailized already.
             continue
           if _IsMapEntry(field):
             js[name] = {}
@@ -312,12 +313,9 @@ class _Printer(object):
           return _INFINITY
       if math.isnan(value):
         return _NAN
-      if field.cpp_type == descriptor.FieldDescriptor.CPPTYPE_FLOAT:
-        if self.float_format:
-          return float(format(value, self.float_format))
-        else:
-          return type_checkers.ToShortestFloat(value)
-
+      if (self.float_format and
+          field.cpp_type == descriptor.FieldDescriptor.CPPTYPE_FLOAT):
+        return float(format(value, self.float_format))
     return value
 
   def _AnyMessageToJsonObject(self, message):
@@ -646,8 +644,7 @@ class _Parser(object):
     elif isinstance(value, _INT_OR_FLOAT):
       message.number_value = value
     else:
-      raise ParseError('Value {0} has unexpected type {1}.'.format(
-          value, type(value)))
+      raise ParseError('Unexpected type for Value message.')
 
   def _ConvertListValueMessage(self, value, message):
     """Convert a JSON representation into ListValue message."""
@@ -719,18 +716,12 @@ def _ConvertScalarFieldValue(value, field, require_str=False):
   if field.cpp_type in _INT_TYPES:
     return _ConvertInteger(value)
   elif field.cpp_type in _FLOAT_TYPES:
-    return _ConvertFloat(value, field)
+    return _ConvertFloat(value)
   elif field.cpp_type == descriptor.FieldDescriptor.CPPTYPE_BOOL:
     return _ConvertBool(value, require_str)
   elif field.cpp_type == descriptor.FieldDescriptor.CPPTYPE_STRING:
     if field.type == descriptor.FieldDescriptor.TYPE_BYTES:
-      if isinstance(value, six.text_type):
-        encoded = value.encode('utf-8')
-      else:
-        encoded = value
-      # Add extra padding '='
-      padded_value = encoded + b'=' * (4 - len(encoded) % 4)
-      return base64.urlsafe_b64decode(padded_value)
+      return base64.b64decode(value)
     else:
       # Checking for unpaired surrogates appears to be unreliable,
       # depending on the specific Python version, so we check manually.
@@ -774,32 +765,11 @@ def _ConvertInteger(value):
   if isinstance(value, six.text_type) and value.find(' ') != -1:
     raise ParseError('Couldn\'t parse integer: "{0}".'.format(value))
 
-  if isinstance(value, bool):
-    raise ParseError('Bool value {0} is not acceptable for '
-                     'integer field.'.format(value))
-
   return int(value)
 
 
-def _ConvertFloat(value, field):
+def _ConvertFloat(value):
   """Convert an floating point number."""
-  if isinstance(value, float):
-    if math.isnan(value):
-      raise ParseError('Couldn\'t parse NaN, use quoted "NaN" instead.')
-    if math.isinf(value):
-      if value > 0:
-        raise ParseError('Couldn\'t parse Infinity or value too large, '
-                         'use quoted "Infinity" instead.')
-      else:
-        raise ParseError('Couldn\'t parse -Infinity or value too small, '
-                         'use quoted "-Infinity" instead.')
-    if field.cpp_type == descriptor.FieldDescriptor.CPPTYPE_FLOAT:
-      # pylint: disable=protected-access
-      if value > type_checkers._FLOAT_MAX:
-        raise ParseError('Float value too large')
-      # pylint: disable=protected-access
-      if value < type_checkers._FLOAT_MIN:
-        raise ParseError('Float value too small')
   if value == 'nan':
     raise ParseError('Couldn\'t parse float "nan", use "NaN" instead.')
   try:

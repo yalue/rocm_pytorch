@@ -34,13 +34,13 @@
 #include <stack>
 
 #include <google/protobuf/stubs/once.h>
+#include <google/protobuf/stubs/time.h>
 #include <google/protobuf/wire_format_lite.h>
 #include <google/protobuf/util/internal/field_mask_utility.h>
 #include <google/protobuf/util/internal/object_location_tracker.h>
 #include <google/protobuf/util/internal/constants.h>
 #include <google/protobuf/util/internal/utility.h>
 #include <google/protobuf/stubs/strutil.h>
-#include <google/protobuf/stubs/time.h>
 #include <google/protobuf/stubs/map_util.h>
 #include <google/protobuf/stubs/statusor.h>
 
@@ -124,7 +124,7 @@ inline Status WriteInt32(int field_number, const DataPiece& data,
                          CodedOutputStream* stream) {
   StatusOr<int32> i32 = data.ToInt32();
   if (i32.ok()) {
-    WireFormatLite::WriteInt32(field_number, i32.value(), stream);
+    WireFormatLite::WriteInt32(field_number, i32.ValueOrDie(), stream);
   }
   return i32.status();
 }
@@ -134,7 +134,7 @@ inline Status WriteSFixed32(int field_number, const DataPiece& data,
                             CodedOutputStream* stream) {
   StatusOr<int32> i32 = data.ToInt32();
   if (i32.ok()) {
-    WireFormatLite::WriteSFixed32(field_number, i32.value(), stream);
+    WireFormatLite::WriteSFixed32(field_number, i32.ValueOrDie(), stream);
   }
   return i32.status();
 }
@@ -144,7 +144,7 @@ inline Status WriteSInt32(int field_number, const DataPiece& data,
                           CodedOutputStream* stream) {
   StatusOr<int32> i32 = data.ToInt32();
   if (i32.ok()) {
-    WireFormatLite::WriteSInt32(field_number, i32.value(), stream);
+    WireFormatLite::WriteSInt32(field_number, i32.ValueOrDie(), stream);
   }
   return i32.status();
 }
@@ -154,7 +154,7 @@ inline Status WriteFixed32(int field_number, const DataPiece& data,
                            CodedOutputStream* stream) {
   StatusOr<uint32> u32 = data.ToUint32();
   if (u32.ok()) {
-    WireFormatLite::WriteFixed32(field_number, u32.value(), stream);
+    WireFormatLite::WriteFixed32(field_number, u32.ValueOrDie(), stream);
   }
   return u32.status();
 }
@@ -164,7 +164,7 @@ inline Status WriteUInt32(int field_number, const DataPiece& data,
                           CodedOutputStream* stream) {
   StatusOr<uint32> u32 = data.ToUint32();
   if (u32.ok()) {
-    WireFormatLite::WriteUInt32(field_number, u32.value(), stream);
+    WireFormatLite::WriteUInt32(field_number, u32.ValueOrDie(), stream);
   }
   return u32.status();
 }
@@ -174,7 +174,7 @@ inline Status WriteInt64(int field_number, const DataPiece& data,
                          CodedOutputStream* stream) {
   StatusOr<int64> i64 = data.ToInt64();
   if (i64.ok()) {
-    WireFormatLite::WriteInt64(field_number, i64.value(), stream);
+    WireFormatLite::WriteInt64(field_number, i64.ValueOrDie(), stream);
   }
   return i64.status();
 }
@@ -184,7 +184,7 @@ inline Status WriteSFixed64(int field_number, const DataPiece& data,
                             CodedOutputStream* stream) {
   StatusOr<int64> i64 = data.ToInt64();
   if (i64.ok()) {
-    WireFormatLite::WriteSFixed64(field_number, i64.value(), stream);
+    WireFormatLite::WriteSFixed64(field_number, i64.ValueOrDie(), stream);
   }
   return i64.status();
 }
@@ -194,7 +194,7 @@ inline Status WriteSInt64(int field_number, const DataPiece& data,
                           CodedOutputStream* stream) {
   StatusOr<int64> i64 = data.ToInt64();
   if (i64.ok()) {
-    WireFormatLite::WriteSInt64(field_number, i64.value(), stream);
+    WireFormatLite::WriteSInt64(field_number, i64.ValueOrDie(), stream);
   }
   return i64.status();
 }
@@ -204,7 +204,7 @@ inline Status WriteFixed64(int field_number, const DataPiece& data,
                            CodedOutputStream* stream) {
   StatusOr<uint64> u64 = data.ToUint64();
   if (u64.ok()) {
-    WireFormatLite::WriteFixed64(field_number, u64.value(), stream);
+    WireFormatLite::WriteFixed64(field_number, u64.ValueOrDie(), stream);
   }
   return u64.status();
 }
@@ -214,7 +214,7 @@ inline Status WriteUInt64(int field_number, const DataPiece& data,
                           CodedOutputStream* stream) {
   StatusOr<uint64> u64 = data.ToUint64();
   if (u64.ok()) {
-    WireFormatLite::WriteUInt64(field_number, u64.value(), stream);
+    WireFormatLite::WriteUInt64(field_number, u64.ValueOrDie(), stream);
   }
   return u64.status();
 }
@@ -224,7 +224,7 @@ inline Status WriteDouble(int field_number, const DataPiece& data,
                           CodedOutputStream* stream) {
   StatusOr<double> d = data.ToDouble();
   if (d.ok()) {
-    WireFormatLite::WriteDouble(field_number, d.value(), stream);
+    WireFormatLite::WriteDouble(field_number, d.ValueOrDie(), stream);
   }
   return d.status();
 }
@@ -234,7 +234,7 @@ inline Status WriteFloat(int field_number, const DataPiece& data,
                          CodedOutputStream* stream) {
   StatusOr<float> f = data.ToFloat();
   if (f.ok()) {
-    WireFormatLite::WriteFloat(field_number, f.value(), stream);
+    WireFormatLite::WriteFloat(field_number, f.ValueOrDie(), stream);
   }
   return f.status();
 }
@@ -244,7 +244,7 @@ inline Status WriteBool(int field_number, const DataPiece& data,
                         CodedOutputStream* stream) {
   StatusOr<bool> b = data.ToBool();
   if (b.ok()) {
-    WireFormatLite::WriteBool(field_number, b.value(), stream);
+    WireFormatLite::WriteBool(field_number, b.ValueOrDie(), stream);
   }
   return b.status();
 }
@@ -264,7 +264,7 @@ inline Status WriteString(int field_number, const DataPiece& data,
                           CodedOutputStream* stream) {
   StatusOr<std::string> s = data.ToString();
   if (s.ok()) {
-    WireFormatLite::WriteString(field_number, s.value(), stream);
+    WireFormatLite::WriteString(field_number, s.ValueOrDie(), stream);
   }
   return s.status();
 }
@@ -406,9 +406,7 @@ std::string ProtoWriter::ProtoElement::ToString() const {
         now->parent()->parent_field_ != now->parent_field_) {
       std::string name = now->parent_field_->name();
       int i = 0;
-      while (i < name.size() &&
-             (ascii_isalnum(name[i]) || name[i] == '_'))
-        ++i;
+      while (i < name.size() && (ascii_isalnum(name[i]) || name[i] == '_')) ++i;
       if (i > 0 && i == name.size()) {  // safe field name
         if (loc.empty()) {
           loc = name;
@@ -451,8 +449,7 @@ void ProtoWriter::MissingField(StringPiece missing_name) {
   listener_->MissingField(location(), missing_name);
 }
 
-ProtoWriter* ProtoWriter::StartObject(
-    StringPiece name) {
+ProtoWriter* ProtoWriter::StartObject(StringPiece name) {
   // Starting the root message. Create the root ProtoElement and return.
   if (element_ == nullptr) {
     if (!name.empty()) {
@@ -462,8 +459,8 @@ ProtoWriter* ProtoWriter::StartObject(
     return this;
   }
 
-  const google::protobuf::Field* field = BeginNamed(name, false);
-
+  const google::protobuf::Field* field = nullptr;
+  field = BeginNamed(name, false);
   if (field == nullptr) return this;
 
   // Check to see if this field is a oneof and that no oneof in that group has
@@ -484,7 +481,6 @@ ProtoWriter* ProtoWriter::StartObject(
   return StartObjectField(*field, *type);
 }
 
-
 ProtoWriter* ProtoWriter::EndObject() {
   if (invalid_depth_ > 0) {
     --invalid_depth_;
@@ -504,11 +500,8 @@ ProtoWriter* ProtoWriter::EndObject() {
   return this;
 }
 
-ProtoWriter* ProtoWriter::StartList(
-    StringPiece name) {
-
+ProtoWriter* ProtoWriter::StartList(StringPiece name) {
   const google::protobuf::Field* field = BeginNamed(name, true);
-
   if (field == nullptr) return this;
 
   if (!ValidOneof(*field, name)) {
@@ -527,7 +520,6 @@ ProtoWriter* ProtoWriter::StartList(
   return StartListField(*field, *type);
 }
 
-
 ProtoWriter* ProtoWriter::EndList() {
   if (invalid_depth_ > 0) {
     --invalid_depth_;
@@ -537,13 +529,12 @@ ProtoWriter* ProtoWriter::EndList() {
   return this;
 }
 
-ProtoWriter* ProtoWriter::RenderDataPiece(
-    StringPiece name, const DataPiece& data) {
+ProtoWriter* ProtoWriter::RenderDataPiece(StringPiece name,
+                                          const DataPiece& data) {
   Status status;
   if (invalid_depth_ > 0) return this;
 
   const google::protobuf::Field* field = Lookup(name);
-
   if (field == nullptr) return this;
 
   if (!ValidOneof(*field, name)) return this;
@@ -604,7 +595,7 @@ Status ProtoWriter::WriteEnum(int field_number, const DataPiece& data,
                                 case_insensitive_enum_parsing,
                                 ignore_unknown_values, &is_unknown_enum_value);
   if (e.ok() && !is_unknown_enum_value) {
-    WireFormatLite::WriteEnum(field_number, e.value(), stream);
+    WireFormatLite::WriteEnum(field_number, e.ValueOrDie(), stream);
   }
   return e.status();
 }
@@ -706,8 +697,8 @@ ProtoWriter* ProtoWriter::RenderPrimitiveField(
       break;
     }
     default:  // TYPE_GROUP or TYPE_MESSAGE
-      status =
-          Status(util::error::INVALID_ARGUMENT, data.ToString().value());
+      status = Status(util::error::INVALID_ARGUMENT,
+                      data.ToString().ValueOrDie());
   }
 
   if (!status.ok()) {

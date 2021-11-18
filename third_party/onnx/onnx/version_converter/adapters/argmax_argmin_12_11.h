@@ -22,9 +22,8 @@ class ArgMaxArgMin_12_11 final : public Adapter {
 	    }
     }
 
-    Node* adapt(std::shared_ptr<Graph> , Node* node) const override {
+    void adapt(std::shared_ptr<Graph> , Node* node) const override {
 	    adapt_argmax_argmin_12_11(node);
-      return node;
     }
 };
 

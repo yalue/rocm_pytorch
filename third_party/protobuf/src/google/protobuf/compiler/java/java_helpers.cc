@@ -75,8 +75,8 @@ const char* kForbiddenWordList[] = {
     "class",
 };
 
-const std::unordered_set<std::string>* kReservedNames =
-    new std::unordered_set<std::string>({
+const std::unordered_set<string>* kReservedNames =
+    new std::unordered_set<string>({
         "abstract",   "assert",       "boolean",   "break",      "byte",
         "case",       "catch",        "char",      "class",      "const",
         "continue",   "default",      "do",        "double",     "else",
@@ -308,7 +308,7 @@ std::string ExtraMessageOrBuilderInterfaces(const Descriptor* descriptor) {
 
 std::string FieldConstantName(const FieldDescriptor* field) {
   std::string name = field->name() + "_FIELD_NUMBER";
-  ToUpper(&name);
+  UpperString(&name);
   return name;
 }
 
@@ -427,7 +427,6 @@ const char* BoxedPrimitiveTypeName(JavaType type) {
 const char* BoxedPrimitiveTypeName(const FieldDescriptor* descriptor) {
   return BoxedPrimitiveTypeName(GetJavaType(descriptor));
 }
-
 
 std::string GetOneofStoredType(const FieldDescriptor* field) {
   const JavaType javaType = GetJavaType(field);
@@ -964,7 +963,6 @@ int GetExperimentalJavaFieldType(const FieldDescriptor* field) {
   static const int kUtf8CheckBit = 0x200;
   static const int kCheckInitialized = 0x400;
   static const int kMapWithProto2EnumValue = 0x800;
-  static const int kHasHasBit = 0x1000;
   int extra_bits = field->is_required() ? kRequiredBit : 0;
   if (field->type() == FieldDescriptor::TYPE_STRING && CheckUtf8(field)) {
     extra_bits |= kUtf8CheckBit;
@@ -973,12 +971,9 @@ int GetExperimentalJavaFieldType(const FieldDescriptor* field) {
                                HasRequiredFields(field->message_type()))) {
     extra_bits |= kCheckInitialized;
   }
-  if (HasHasbit(field)) {
-    extra_bits |= kHasHasBit;
-  }
 
   if (field->is_map()) {
-    if (!SupportUnknownEnumValue(field)) {
+    if (SupportFieldPresence(field->file())) {
       const FieldDescriptor* value =
           field->message_type()->FindFieldByName("value");
       if (GetJavaType(value) == JAVATYPE_ENUM) {
@@ -990,7 +985,7 @@ int GetExperimentalJavaFieldType(const FieldDescriptor* field) {
     return GetExperimentalJavaFieldTypeForPacked(field);
   } else if (field->is_repeated()) {
     return GetExperimentalJavaFieldTypeForRepeated(field) | extra_bits;
-  } else if (IsRealOneof(field)) {
+  } else if (field->containing_oneof() != NULL) {
     return (GetExperimentalJavaFieldTypeForSingular(field) +
             kOneofFieldTypeOffset) |
            extra_bits;

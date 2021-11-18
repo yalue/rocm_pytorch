@@ -352,17 +352,23 @@ void ChannelImpl::sendOverIb(SendOpIter opIter) {
 
   size_t numChunks = ceilOfRatio(op.length, chunkSize);
   for (size_t chunkIdx = 0; chunkIdx < numChunks; chunkIdx++) {
-    IbvNic::SendInfo info;
-    info.addr =
-        reinterpret_cast<uint8_t*>(op.buffer.ptr) + chunkIdx * chunkSize;
-    info.length = std::min(op.length - chunkIdx * chunkSize, chunkSize);
-    info.lkey = mr->lkey;
+    IbvLib::sge list;
+    list.addr = reinterpret_cast<uint64_t>(
+        reinterpret_cast<uint8_t*>(op.buffer.ptr) + chunkIdx * chunkSize);
+    list.length = std::min(op.length - chunkIdx * chunkSize, chunkSize);
+    list.lkey = mr->lkey;
+
+    IbvLib::send_wr wr;
+    std::memset(&wr, 0, sizeof(wr));
+    wr.sg_list = &list;
+    wr.num_sge = 1;
+    wr.opcode = IbvLib::WR_SEND;
 
     TP_VLOG(6) << "Channel " << id_ << " is sending chunk #" << chunkIdx
                << " (out of " << numChunks << ") of tensor #"
                << op.sequenceNumber << " on QP " << qp->qp_num;
     localNic.postSend(
-        qp, info, callbackWrapper_([opIter, chunkIdx](ChannelImpl& impl) {
+        qp, wr, callbackWrapper_([opIter, chunkIdx](ChannelImpl& impl) {
           TP_VLOG(6) << "Channel " << impl.id_ << " done sending chunk #"
                      << chunkIdx << " of tensor #" << opIter->sequenceNumber;
           opIter->numChunksBeingSent--;
@@ -529,17 +535,22 @@ void ChannelImpl::recvOverIbAndWriteReadyToRecive(RecvOpIter opIter) {
 
   size_t numChunks = ceilOfRatio(op.length, chunkSize);
   for (size_t chunkIdx = 0; chunkIdx < numChunks; chunkIdx++) {
-    IbvNic::RecvInfo info;
-    info.addr =
-        reinterpret_cast<uint8_t*>(op.buffer.ptr) + chunkIdx * chunkSize;
-    info.length = std::min(op.length - chunkIdx * chunkSize, chunkSize);
-    info.lkey = mr->lkey;
+    IbvLib::sge list;
+    list.addr = reinterpret_cast<uint64_t>(
+        reinterpret_cast<uint8_t*>(op.buffer.ptr) + chunkIdx * chunkSize);
+    list.length = std::min(op.length - chunkIdx * chunkSize, chunkSize);
+    list.lkey = mr->lkey;
+
+    IbvLib::recv_wr wr;
+    std::memset(&wr, 0, sizeof(wr));
+    wr.sg_list = &list;
+    wr.num_sge = 1;
 
     TP_VLOG(6) << "Channel " << id_ << " is receiving chunk #" << chunkIdx
                << " (out of " << numChunks << ") of tensor #"
                << op.sequenceNumber << " on QP " << qp->qp_num;
     localNic.postRecv(
-        qp, info, callbackWrapper_([opIter, chunkIdx](ChannelImpl& impl) {
+        qp, wr, callbackWrapper_([opIter, chunkIdx](ChannelImpl& impl) {
           TP_VLOG(6) << "Channel " << impl.id_ << " done receiving chunk #"
                      << chunkIdx << " of tensor #" << opIter->sequenceNumber;
           opIter->numChunksBeingReceived--;

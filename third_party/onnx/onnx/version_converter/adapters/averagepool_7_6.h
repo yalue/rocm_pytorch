@@ -20,9 +20,8 @@ class AveragePool_7_6 final : public Adapter {
             "Version 6 does not support including pad");
     }
 
-    Node* adapt(std::shared_ptr<Graph> graph, Node* node) const override {
+    void adapt(std::shared_ptr<Graph> graph, Node* node) const override {
       adapt_averagepool_7_6(graph, node);
-      return node;
     }
 };
 

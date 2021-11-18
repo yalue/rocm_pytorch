@@ -27,10 +27,7 @@ import { AntTableChart } from './charts/AntTableChart'
 import { PieChart } from './charts/PieChart'
 import { DataLoading } from './DataLoading'
 import { makeChartHeaderRenderer, useTooltipCommonStyles } from './helpers'
-import {
-  GPUKernelTotalTimeTooltip,
-  TensorCoresPieChartTooltip
-} from './TooltipDescriptions'
+import { GPUKernelTotalTimeTooltip } from './TooltipDescriptions'
 
 export interface IProps {
   run: string
@@ -70,14 +67,13 @@ export const Kernel: React.FC<IProps> = (props) => {
   const [kernelGraph, setKernelGraph] = React.useState<Graph | undefined>(
     undefined
   )
-  const [tcGraph, setTcGraph] = React.useState<Graph | undefined>(undefined)
   const [kernelTable, setKernelTable] = React.useState<Graph | undefined>(
     undefined
   )
   const [groupBy, setGroupBy] = React.useState(KernelGroupBy.Kernel)
   const [searchKernelName, setSearchKernelName] = React.useState('')
   const [searchOpName, setSearchOpName] = React.useState('')
-  const [sortColumn, setSortColumn] = React.useState('')
+  const [sortColumn, setSortColumn] = React.useState(2)
 
   const [topText, actualTop, useTop, setTopText, setUseTop] = useTopN({
     defaultUseTop: UseTop.Use,
@@ -96,7 +92,6 @@ export const Kernel: React.FC<IProps> = (props) => {
 
   React.useEffect(() => {
     api.defaultApi.kernelTableGet(run, worker, span, groupBy).then((resp) => {
-      setSortColumn(resp.metadata.sort)
       setKernelTable(resp.data)
     })
   }, [run, worker, span, groupBy])
@@ -109,12 +104,6 @@ export const Kernel: React.FC<IProps> = (props) => {
       })
   }, [run, worker, span])
 
-  React.useEffect(() => {
-    api.defaultApi.kernelTcPieGet(run, worker, span).then((resp) => {
-      setTcGraph(resp.total)
-    })
-  }, [run, worker, span])
-
   const [searchedKernelTable] = useSearch(searchKernelName, 'name', kernelTable)
   const [searchedOpTable] = useSearch(
     searchOpName,
@@ -124,6 +113,7 @@ export const Kernel: React.FC<IProps> = (props) => {
 
   const onGroupByChanged: SelectProps['onChange'] = (event) => {
     setGroupBy(event.target.value as KernelGroupBy)
+    setSortColumn(event.target.value == KernelGroupBy.Kernel ? 2 : 3)
   }
 
   const onSearchKernelChanged: TextFieldProps['onChange'] = (event) => {
@@ -151,22 +141,13 @@ export const Kernel: React.FC<IProps> = (props) => {
     [chartHeaderRenderer]
   )
 
-  const TensorCoresTitle = React.useMemo(
-    () =>
-      chartHeaderRenderer(
-        'Tensor Cores Utilization',
-        TensorCoresPieChartTooltip
-      ),
-    [chartHeaderRenderer]
-  )
-
   return (
     <div className={classes.root}>
       <Card variant="outlined">
         <CardHeader title="Kernel View" />
         <CardContent>
-          <Grid container spacing={1}>
-            <Grid item container sm={12}>
+          <Grid container direction="column" spacing={1}>
+            <Grid item container>
               <Grid item>
                 <RadioGroup row value={useTop} onChange={onUseTopChanged}>
                   <FormControlLabel
@@ -208,22 +189,6 @@ export const Kernel: React.FC<IProps> = (props) => {
                 )}
               </DataLoading>
             </Grid>
-            <Grid item sm={6}>
-              <DataLoading value={tcGraph}>
-                {(graph) => (
-                  <Card elevation={0}>
-                    <CardHeader title={TensorCoresTitle} />
-                    <PieChart
-                      title={graph.title}
-                      graph={graph}
-                      colors={['#0099C6', '#DD4477', '#66AA00', '#B82E2E']}
-                      top={actualTop}
-                      tooltip_mode="percentage"
-                    />
-                  </Card>
-                )}
-              </DataLoading>
-            </Grid>
             <Grid item container direction="column" spacing={1} sm={12}>
               <Grid item container>
                 <Grid sm={6} item container justify="space-around">
@@ -235,7 +200,7 @@ export const Kernel: React.FC<IProps> = (props) => {
                       onChange={onGroupByChanged}
                     >
                       <MenuItem value={KernelGroupBy.KernelNameAndOpName}>
-                        Kernel Properties + Op Name
+                        Kernel Name + Op Name
                       </MenuItem>
                       <MenuItem value={KernelGroupBy.Kernel}>
                         Kernel Name

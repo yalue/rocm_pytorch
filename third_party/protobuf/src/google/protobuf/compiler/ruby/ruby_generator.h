@@ -49,12 +49,11 @@ namespace ruby {
 // Ruby output, you can do so by registering an instance of this
 // CodeGenerator with the CommandLineInterface in your main() function.
 class PROTOC_EXPORT Generator : public CodeGenerator {
-  bool Generate(const FileDescriptor* file, const string& parameter,
-                GeneratorContext* generator_context,
-                string* error) const override;
-  uint64_t GetSupportedFeatures() const override {
-    return FEATURE_PROTO3_OPTIONAL;
-  }
+  virtual bool Generate(
+      const FileDescriptor* file,
+      const string& parameter,
+      GeneratorContext* generator_context,
+      string* error) const;
 };
 
 }  // namespace ruby

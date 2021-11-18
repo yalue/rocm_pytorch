@@ -51,13 +51,8 @@ static void initProfilers(CUcontext ctx) {
     initialized = true;
     VLOG(0) << "libkineto profilers activated";
   }
-  if (getenv("KINETO_DISABLE_EVENT_PROFILER") != nullptr) {
-    VLOG(0) << "Event profiler disabled via env var";
-  } else {
-    ConfigLoader& config_loader = libkineto::api().configLoader();
-    config_loader.initBaseConfig();
-    EventProfilerController::start(ctx, config_loader);
-  }
+  ConfigLoader& config_loader = libkineto::api().configLoader();
+  EventProfilerController::start(ctx, config_loader);
 }
 
 static void stopProfiler(CUcontext ctx) {

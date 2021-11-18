@@ -1,9 +1,3 @@
-/*
- * Copyright (c) Facebook, Inc. and its affiliates.
- * All rights reserved.
- * This source code is licensed under the BSD-style license found in the
- * LICENSE file in the root directory of this source tree.
- */
 {% set wdesc =  "weighted" if weighted else "unweighted" %}
 #include "codegen/embedding_forward_template_helpers.cuh"
 
@@ -20,12 +14,6 @@ enum class SparseType : uint8_t {
     INT2 = 4,
 };
 
-// Keep in sync with EmbeddingLocation in split_table_batched_embeddings_ops.py
-enum {
-  DEVICE = 0,
-  MANAGED = 1,
-  MANAGED_CACHING = 2,
-};
 
 __forceinline__ __host__ __device__ uint32_t round_up(uint32_t a, uint32_t b) {
   return ((a + b - 1) / b) * b;
@@ -37,7 +25,6 @@ __forceinline__ __host__ __device__ uint32_t div_round_up(uint32_t a, uint32_t b
 }
 
 __host__ __device__ inline int32_t unpadded_row_size_in_bytes(int32_t dim, SparseType weight_ty) {
-    if (weight_ty == SparseType::FP32) { return dim * 4; }
     if (weight_ty == SparseType::FP16) { return dim * 2; }
     if (weight_ty == SparseType::INT8) { return dim + 4; }
     if (weight_ty == SparseType::INT4) { return dim / 2 + 4; }
@@ -52,7 +39,6 @@ __host__ __device__ inline int32_t padded_row_size_in_bytes(int32_t dim, SparseT
 
 // "Effective" number of elements in the row when we include the row-wise quantization parameters.
 __device__ inline int32_t padded_D(int32_t dim, SparseType weight_ty) {
-    if (weight_ty == SparseType::FP32) { return dim; }
     if (weight_ty == SparseType::FP16) { return dim; }
     if (weight_ty == SparseType::INT8) { return dim + 4; }
     if (weight_ty == SparseType::INT4) { return dim + 8; }
@@ -110,10 +96,6 @@ __device__ __forceinline__ __half2 to_half2(float2 v) {
   return __float22half2_rn(v);
 }
 
-__device__ __forceinline__ __half to_half(float v) {
-  return __float2half_rn(v);
-}
-
 __forceinline__ __device__ __half2 hfma2(const __half2 a, const __half2 b, const __half2 c) {
 #if __CUDA_ARCH__ >= 530 && __CUDA_ARCH__ != 610
   return __hfma2(a, b, c);
@@ -139,23 +121,11 @@ __forceinline__ __device__ half hmul(half a, half b) {
 // Reinterpret a  pair of uint16_t (packed into a uint32_t) as half2, and multiply by rhs.
 __device__ __forceinline__ __half2 hmul_short2(uint32_t lhs, __half rhs) {
 #if __CUDA_ARCH__ >= 530 && __CUDA_ARCH__ != 610
-  #ifndef __HALF2_TO_UI
-  // cuda_fp16.hpp
-  #define __HALF2_TO_UI(var) *(reinterpret_cast<unsigned int*>(&(var)))
-  #endif
-  #ifndef __HALF2_TO_CUI
-  // cuda_fp16.hpp
-  #define __HALF2_TO_CUI(var) *(reinterpret_cast<const unsigned int *>(&(var)))
-  #endif
   __half2 ret;
   __half2 rhsp = make_half2(rhs, rhs);
   asm("mul.f16x2 %0, %1, %2;" : "=r"(__HALF2_TO_UI(ret)) : "r"(__HALF2_TO_CUI(lhs)), "r"(__HALF2_TO_CUI(rhsp)));
   return ret;
 #else
-  #ifndef __HALF2_TO_UI
-  // cuda_fp16.hpp
-  #define __HALF2_TO_UI(var) *(reinterpret_cast<unsigned int*>(&(var)))
-  #endif
   __half2 lhs_h2;
   __HALF2_TO_UI(lhs_h2) = lhs;
   float2 fx = __half22float2(lhs_h2);
@@ -229,15 +199,6 @@ __forceinline__ __device__ float2 accumulate_weighted_fp16(float2 acc, __half2 v
   acc.x = fmaf(v.x, weight, acc.x);
   acc.y = fmaf(v.y, weight, acc.y);
   return acc;
-}
-
-__forceinline__ __device__ float accumulate_fp32(float acc, float vals) {
-  acc += vals;
-  return acc;
-}
-
-__forceinline__ __device__ float accumulate_weighted_fp32(float acc, float vals, float weight) {
-  return fmaf(vals, weight, acc);
 }
 
 __forceinline__ __device__ float8 accumulate_packed_int4(float8 acc,
@@ -442,162 +403,8 @@ void cp_async_zfill(void *smem_ptr, void const *global_ptr, bool pred_guard) {
 // TODO: increase code sharing (templates for accumulator_ty, accumulation, outputs per thread, etc?)
 template<typename index_t, size_t OutputRowsPerThread, size_t WarpsPerBlock, size_t InputRowsInFlight, size_t MinNum128BRows, size_t MaxNum128BRows>
 __launch_bounds__(WarpsPerBlock * 32)
-__global__ void fp32_split_embedding_codegen_forward_{{ wdesc }}_kernel_small_L(
-  const PackedTensorAccessor64<uint8_t, 1, RestrictPtrTraits> dev_weights,
-  const PackedTensorAccessor64<uint8_t, 1, RestrictPtrTraits> uvm_weights,
-  const PackedTensorAccessor32<int32_t, 1, RestrictPtrTraits> weights_placements,
-  const PackedTensorAccessor32<int64_t, 1, RestrictPtrTraits> weights_offsets,
-  const PackedTensorAccessor32<uint8_t, 1, RestrictPtrTraits> weights_tys,
-  const PackedTensorAccessor32<int32_t, 1, RestrictPtrTraits> D_offsets,
-  const PackedTensorAccessor32<index_t, 1, RestrictPtrTraits> indices,
-  const PackedTensorAccessor32<index_t, 1, RestrictPtrTraits> offsets,
-  int64_t pooling_mode,
-  {% if weighted %}
-  PackedTensorAccessor32<float, 1, RestrictPtrTraits>
-      indice_weights,
-  {% endif %}
-  PackedTensorAccessor32<Half, 2, RestrictPtrTraits>
-      output // [B][total_D],
-  ) {
-
-  int32_t B = output.size(0);
-  int32_t T = D_offsets.size(0) - 1;
-  int32_t bb_t = blockIdx.x * blockDim.y + threadIdx.y;
-  if (bb_t >= div_round_up(B, OutputRowsPerThread) * T) {
-      return;
-  }
-
-  uint32_t t = bb_t / div_round_up(B, OutputRowsPerThread);
-
-  int32_t D_start = D_offsets[t];
-  int32_t D_end = D_offsets[t + 1];
-  int32_t D = D_end - D_start;
-  SparseType weight_ty = static_cast<SparseType>(weights_tys[t]);
-  if (weight_ty != SparseType::FP32) {
-      return;
-  }
-
-  const int32_t D_bytes = padded_row_size_in_bytes(D, weight_ty);
-
-  if (D_bytes <= MinNum128BRows * 128 || D_bytes > MaxNum128BRows * 128) {
-    return;
-  }
-
-  uint32_t bb = bb_t % div_round_up(B, OutputRowsPerThread);
-
-  int64_t weights_offset = weights_offsets[t];
-  const int32_t D_total = padded_D(D, weight_ty);
-  const int32_t D_padding = D_total - D;
-
-  uint32_t warp_idx = threadIdx.y;
-  int32_t indices_starts[OutputRowsPerThread];
-  int32_t Ls[OutputRowsPerThread];
-  int32_t max_Ls = 0;
-
-  for (uint32_t i = 0; i < OutputRowsPerThread; ++i) {
-    uint32_t b = min(static_cast<uint32_t>(bb * OutputRowsPerThread + i), static_cast<uint32_t>(B - 1));
-    int32_t indices_start = offsets[t * B + b];
-    int32_t indices_end = offsets[t * B + b + 1];
-    indices_starts[i] = indices_start;
-    Ls[i] = indices_end - indices_start;
-    max_Ls = max(max_Ls, Ls[i]);
-  }
-
-  const uint8_t* __restrict__ weights;
-  const auto placement = weights_placements[t];
-  if (placement == DEVICE) {
-      weights = &dev_weights[weights_offset];
-  } else {
-      weights = &uvm_weights[weights_offset];
-  }
-  constexpr size_t kOutputsPerThread = 1;
-
-  constexpr uint32_t NumUint4PerRow = MaxNum128BRows * 128 / sizeof(uint4);
-  const uint32_t uint4_loads_per_row = div_round_up(D_bytes, sizeof(uint4));
-
-  float accumulators[OutputRowsPerThread][MaxNum128BRows];
-
-  #pragma unroll OutputRowsPerThread
-  for (uint32_t i = 0; i < OutputRowsPerThread; ++i) {
-    #pragma unroll MaxNum128BRows
-    for (uint32_t j = 0; j < MaxNum128BRows; ++j) {
-      accumulators[i][j] = 0.0;
-    }
-  }
-  for (uint32_t L_start = 0; L_start < max_Ls; L_start += InputRowsInFlight) {
-    uint32_t input_rows_in_flight = min(static_cast<uint32_t>(InputRowsInFlight), max_Ls - L_start);
-    typedef uint4 AllBuffers[WarpsPerBlock][OutputRowsPerThread][InputRowsInFlight][NumUint4PerRow];
-    __shared__ AllBuffers buffers;
-
-    {% if weighted %}
-    typedef float AllIndiceWeights[WarpsPerBlock][OutputRowsPerThread][InputRowsInFlight];
-    __shared__ AllIndiceWeights buffers_indice_weights;
-    {% endif %}
-
-    for (uint32_t load_idx = threadIdx.x; load_idx < input_rows_in_flight * uint4_loads_per_row; load_idx += kWarpSize) {
-      uint32_t row_load_idx = load_idx % uint4_loads_per_row;
-      uint32_t input_row_idx = (load_idx / uint4_loads_per_row);
-      #pragma unroll OutputRowsPerThread
-      for (uint32_t i = 0; i < OutputRowsPerThread; ++i) {
-        bool valid = L_start + input_row_idx < Ls[i];
-        int32_t idx = valid ? indices[indices_starts[i] + L_start + input_row_idx] : -1;
-        valid = valid && (idx != -1);
-        const uint4* row = valid ? reinterpret_cast<const uint4*>(&weights[static_cast<int64_t>(idx) * D_bytes]) : reinterpret_cast<const uint4*>(&weights[0]);
-        cp_async_zfill_cg<sizeof(uint4)>(&buffers[warp_idx][i][input_row_idx][row_load_idx], &row[row_load_idx], valid);
-        {% if weighted %}
-        buffers_indice_weights[warp_idx][i][input_row_idx] = valid ? indice_weights[indices_starts[i] + L_start + input_row_idx] : 0.0;
-        {% endif %}
-      }
-    }
-    // equivalent to fence + wait.
-    cp_async_wait<0>();
-    __syncwarp();
-    for (uint32_t input_row_idx = 0; input_row_idx < input_rows_in_flight; ++input_row_idx) {
-      #pragma unroll OutputRowsPerThread
-      for (uint32_t i = 0; i < OutputRowsPerThread; ++i) {
-        bool valid = L_start + input_row_idx < Ls[i];
-        const uint32_t* row = reinterpret_cast<const uint32_t*>(&buffers[warp_idx][i][input_row_idx][0]);
-        {% if weighted %}
-        float row_weight = buffers_indice_weights[warp_idx][i][input_row_idx];
-        {% endif %}
-        #pragma unroll MaxNum128BRows
-        for (uint32_t j = 0; j < MaxNum128BRows; ++j) {
-          float v = reinterpret_cast<const float*>(row)[kWarpSize * j + threadIdx.x];
-          {% if weighted %}
-          accumulators[i][j] = valid ? accumulate_weighted_fp32(accumulators[i][j], v, row_weight) : accumulators[i][j];
-          {% else %}
-          accumulators[i][j] = valid ? accumulate_fp32(accumulators[i][j], v) : accumulators[i][j];
-          {% endif %}
-
-        }
-      }
-    }
-  }
-  #pragma unroll OutputRowsPerThread
-  for (uint32_t i = 0; i < OutputRowsPerThread; ++i) {
-    uint32_t b = min(static_cast<uint32_t>(bb * OutputRowsPerThread + i), static_cast<uint32_t>(B - 1));
-    #pragma unroll MaxNum128BRows
-    for (uint32_t j = 0; j < MaxNum128BRows; ++j) {
-      int32_t output_d = kWarpSize * j * kOutputsPerThread + threadIdx.x * kOutputsPerThread - D_padding;
-      if (pooling_mode == MEAN && Ls[i] != 0) {
-          float inv_L = static_cast<float>(1.0) / static_cast<float>(Ls[i]);
-          accumulators[i][j] *= inv_L;
-      }
-      __half val = to_half(accumulators[i][j]);
-      if (output_d >= 0 && output_d < D) {
-        *reinterpret_cast<__half*>(&output[b][D_start + output_d]) = val;
-      }
-    }
-  }
-}
-
-// TODO: increase code sharing (templates for accumulator_ty, accumulation, outputs per thread, etc?)
-template<typename index_t, size_t OutputRowsPerThread, size_t WarpsPerBlock, size_t InputRowsInFlight, size_t MinNum128BRows, size_t MaxNum128BRows>
-__launch_bounds__(WarpsPerBlock * 32)
 __global__ void fp16_split_embedding_codegen_forward_{{ wdesc }}_kernel_small_L(
   const PackedTensorAccessor64<uint8_t, 1, RestrictPtrTraits> dev_weights,
-  const PackedTensorAccessor64<uint8_t, 1, RestrictPtrTraits> uvm_weights,
-  const PackedTensorAccessor32<int32_t, 1, RestrictPtrTraits> weights_placements,
   const PackedTensorAccessor32<int64_t, 1, RestrictPtrTraits> weights_offsets,
   const PackedTensorAccessor32<uint8_t, 1, RestrictPtrTraits> weights_tys,
   const PackedTensorAccessor32<int32_t, 1, RestrictPtrTraits> D_offsets,
@@ -654,13 +461,7 @@ __global__ void fp16_split_embedding_codegen_forward_{{ wdesc }}_kernel_small_L(
     max_Ls = max(max_Ls, Ls[i]);
   }
 
-  const uint8_t* __restrict__ weights;
-  const auto placement = weights_placements[t];
-  if (placement == DEVICE) {
-      weights = &dev_weights[weights_offset];
-  } else {
-      weights = &uvm_weights[weights_offset];
-  }
+  const uint8_t* __restrict__ weights = &dev_weights[weights_offset];
   constexpr size_t kOutputsPerThread = 2;
 
   constexpr uint32_t NumUint4PerRow = MaxNum128BRows * 128 / sizeof(uint4);
@@ -695,7 +496,6 @@ __global__ void fp16_split_embedding_codegen_forward_{{ wdesc }}_kernel_small_L(
       for (uint32_t i = 0; i < OutputRowsPerThread; ++i) {
         bool valid = L_start + input_row_idx < Ls[i];
         int32_t idx = valid ? indices[indices_starts[i] + L_start + input_row_idx] : -1;
-        valid = valid && (idx != -1);
         const uint4* row = valid ? reinterpret_cast<const uint4*>(&weights[static_cast<int64_t>(idx) * D_bytes]) : reinterpret_cast<const uint4*>(&weights[0]);
         cp_async_zfill_cg<sizeof(uint4)>(&buffers[warp_idx][i][input_row_idx][row_load_idx], &row[row_load_idx], valid);
 
@@ -755,8 +555,6 @@ template<typename index_t, size_t OutputRowsPerThread, size_t WarpsPerBlock, siz
 __launch_bounds__(WarpsPerBlock * 32)
 __global__ void int_4bit_split_embedding_codegen_forward_{{ wdesc }}_kernel_small_L(
   const PackedTensorAccessor64<uint8_t, 1, RestrictPtrTraits> dev_weights,
-  const PackedTensorAccessor64<uint8_t, 1, RestrictPtrTraits> uvm_weights,
-  const PackedTensorAccessor32<int32_t, 1, RestrictPtrTraits> weights_placements,
   const PackedTensorAccessor32<int64_t, 1, RestrictPtrTraits> weights_offsets,
   const PackedTensorAccessor32<uint8_t, 1, RestrictPtrTraits> weights_tys,
   const PackedTensorAccessor32<int32_t, 1, RestrictPtrTraits> D_offsets,
@@ -813,13 +611,7 @@ __global__ void int_4bit_split_embedding_codegen_forward_{{ wdesc }}_kernel_smal
     max_Ls = max(max_Ls, Ls[i]);
   }
 
-  const uint8_t* __restrict__ weights;
-  const auto placement = weights_placements[t];
-  if (placement == DEVICE) {
-      weights = &dev_weights[weights_offset];
-  } else {
-      weights = &uvm_weights[weights_offset];
-  }
+  const uint8_t* __restrict__ weights = &dev_weights[weights_offset];
   constexpr size_t kOutputsPerThread = 8;
 
   constexpr uint32_t NumUint4PerRow = MaxNum128BRows * 128 / sizeof(uint4);
@@ -854,13 +646,13 @@ __global__ void int_4bit_split_embedding_codegen_forward_{{ wdesc }}_kernel_smal
       for (uint32_t i = 0; i < OutputRowsPerThread; ++i) {
         bool valid = L_start + input_row_idx < Ls[i];
         int32_t idx = valid ? indices[indices_starts[i] + L_start + input_row_idx] : -1;
-        valid = valid && (idx != -1);
         const uint4* row = valid ? reinterpret_cast<const uint4*>(&weights[static_cast<int64_t>(idx) * D_bytes]) : reinterpret_cast<const uint4*>(&weights[0]);
         cp_async_zfill_cg<sizeof(uint4)>(&buffers[warp_idx][i][input_row_idx][row_load_idx], &row[row_load_idx], valid);
 
         {% if weighted %}
         buffers_indice_weights[warp_idx][i][input_row_idx] = valid ? indice_weights[indices_starts[i] + L_start + input_row_idx] : 0.0;
         {% endif %}
+
       }
     }
     // equivalent to fence + wait.
@@ -935,8 +727,6 @@ template<typename index_t, size_t OutputRowsPerThread, size_t WarpsPerBlock, siz
 __launch_bounds__(WarpsPerBlock * 32)
 __global__ void int_8bit_split_embedding_codegen_forward_{{ wdesc }}_kernel_small_L(
   const PackedTensorAccessor64<uint8_t, 1, RestrictPtrTraits> dev_weights,
-  const PackedTensorAccessor64<uint8_t, 1, RestrictPtrTraits> uvm_weights,
-  const PackedTensorAccessor32<int32_t, 1, RestrictPtrTraits> weights_placements,
   const PackedTensorAccessor32<int64_t, 1, RestrictPtrTraits> weights_offsets,
   const PackedTensorAccessor32<uint8_t, 1, RestrictPtrTraits> weights_tys,
   const PackedTensorAccessor32<int32_t, 1, RestrictPtrTraits> D_offsets,
@@ -993,13 +783,7 @@ __global__ void int_8bit_split_embedding_codegen_forward_{{ wdesc }}_kernel_smal
     max_Ls = max(max_Ls, Ls[i]);
   }
 
-  const uint8_t* __restrict__ weights;
-  const auto placement = weights_placements[t];
-  if (placement == DEVICE) {
-      weights = &dev_weights[weights_offset];
-  } else {
-      weights = &uvm_weights[weights_offset];
-  }
+  const uint8_t* __restrict__ weights = &dev_weights[weights_offset];
   constexpr size_t kOutputsPerThread = 4;
 
   constexpr uint32_t NumUint4PerRow = MaxNum128BRows * 128 / sizeof(uint4);
@@ -1034,7 +818,6 @@ __global__ void int_8bit_split_embedding_codegen_forward_{{ wdesc }}_kernel_smal
       for (uint32_t i = 0; i < OutputRowsPerThread; ++i) {
         bool valid = L_start + input_row_idx < Ls[i];
         int32_t idx = valid ? indices[indices_starts[i] + L_start + input_row_idx] : -1;
-        valid = valid && (idx != -1);
         const uint4* row = valid ? reinterpret_cast<const uint4*>(&weights[static_cast<int64_t>(idx) * D_bytes]) : reinterpret_cast<const uint4*>(&weights[0]);
         cp_async_zfill_cg<sizeof(uint4)>(&buffers[warp_idx][i][input_row_idx][row_load_idx], &row[row_load_idx], valid);
 
@@ -1103,25 +886,25 @@ __global__ void int_8bit_split_embedding_codegen_forward_{{ wdesc }}_kernel_smal
 
 
 
-__device__ inline uint32_t pruned_hash_function(uint32_t h) {
-    // MurmorHash3 32-bit mixing function.
-    h ^= h >> 16;
-    h *= 0x85ebca6b;
-    h ^= h >> 13;
-    h *= 0xc2b2ae35;
-    h ^= h >> 16;
-    return h;
+#define BIG_CONSTANT(x) (x##LLU)
+__device__ inline uint32_t pruned_hash_function(int32_t key, int32_t table) {
+    uint64_t k = (static_cast<uint64_t>(key) << 32) | static_cast<uint64_t>(table);
+    k ^= k >> 33;
+    k *= BIG_CONSTANT(0xff51afd7ed558ccd);
+    k ^= k >> 33;
+    k *= BIG_CONSTANT(0xc4ceb9fe1a85ec53);
+    k ^= k >> 33;
+    return static_cast<uint32_t>(k >> 32);
 }
 
 __global__ void int_nbit_split_embedding_codegen_forward_pruned_hashmap_lookup_{{ wdesc }}_kernel(
     const PackedTensorAccessor32<int32_t, 1, RestrictPtrTraits> indices,
     const PackedTensorAccessor32<int32_t, 1, RestrictPtrTraits> offsets,
     const PackedTensorAccessor64<int32_t, 2, RestrictPtrTraits> hash_table,
-    const PackedTensorAccessor32<int64_t, 1, RestrictPtrTraits> hash_table_offsets,
     int32_t B,
     int32_t T,
     PackedTensorAccessor32<int32_t, 1, RestrictPtrTraits> dense_indices) {
-    // uint32_t capacity = hash_table.size(0);
+    uint32_t capacity = hash_table.size(0);
     int32_t b_t = blockIdx.x * blockDim.y + threadIdx.y;
     int32_t t = b_t / B;
     int32_t b = b_t % B;
@@ -1131,38 +914,23 @@ __global__ void int_nbit_split_embedding_codegen_forward_pruned_hashmap_lookup_{
     int32_t indices_start = offsets[t * B + b];
     int32_t indices_end = offsets[t * B + b + 1];
     int32_t L = indices_end - indices_start;
-
-    int64_t table_start = hash_table_offsets[t];
-    int64_t table_end = hash_table_offsets[t + 1];
-    int64_t capacity = table_end - table_start;
-
-    if (capacity == 0) {
-      // No pruning applied on the indices associated with this table.
-      for (int32_t l = threadIdx.x; l < L; l += blockDim.x) {
-        dense_indices[indices_start + l] = indices[indices_start + l];
-      }
-      return;
-    }
-
     uint32_t subwarp_id = threadIdx.x / 4;
     uint32_t subwarp_tid = threadIdx.x % 4;
     uint32_t subwarp_mask = static_cast<uint32_t>(0xF) << (4 * subwarp_id);
     for (int32_t l_start = 0; l_start + subwarp_id < L; l_start += kWarpSize / 4) {
         int32_t idx = indices[indices_start + l_start + subwarp_id];
-        uint32_t slot_start = pruned_hash_function(static_cast<uint32_t>(idx)) % capacity;
+        uint32_t slot_start = static_cast<uint32_t>(pruned_hash_function(idx, t));
         while (true) {
             uint32_t slot = (slot_start + subwarp_tid) % capacity;
-            int2 val = *reinterpret_cast<const int2*>(&hash_table[table_start + static_cast<int64_t>(slot)][0]);
-            int32_t slot_sparse_idx = val.x;
-            int32_t slot_dense_idx = val.y;
-
+            int32_t sidx = hash_table[slot][0];
+            int32_t stable = hash_table[slot][1];
             bool found = false;
             bool empty = false;
-            if (slot_sparse_idx == -1) {
+            if (sidx == -1) {
                 empty = true;
-            } else if (slot_sparse_idx == idx) {
+            } else if (sidx == idx && stable == t) {
                 found = true;
-                dense_indices[indices_start + l_start + subwarp_id] = slot_dense_idx;
+                dense_indices[indices_start + l_start + subwarp_id] = hash_table[slot][2];
             }
             if (__any_sync(subwarp_mask, found)) {
                 break;
@@ -1175,42 +943,10 @@ __global__ void int_nbit_split_embedding_codegen_forward_pruned_hashmap_lookup_{
     }
 }
 
-{% if not weighted %}
-__global__ void int_nbit_split_embedding_codegen_forward_pruned_array_lookup_kernel(
-    const PackedTensorAccessor32<int32_t, 1, RestrictPtrTraits> indices,
-    const PackedTensorAccessor32<int32_t, 1, RestrictPtrTraits> offsets,
-    const PackedTensorAccessor32<int32_t, 1, RestrictPtrTraits> index_remappings,
-    const PackedTensorAccessor32<int64_t, 1, RestrictPtrTraits> index_remappings_offsets,
-    int32_t B,
-    int32_t T,
-    PackedTensorAccessor32<int32_t, 1, RestrictPtrTraits> dense_indices) {
-  int32_t b_t = blockIdx.x * blockDim.y + threadIdx.y;
-  int32_t t = b_t / B;
-  int32_t b = b_t % B;
-  if (b_t >= B * T) {
-      return;
-  }
-  int32_t indices_start = offsets[t * B + b];
-  int32_t indices_end = offsets[t * B + b + 1];
-  int32_t L = indices_end - indices_start;
-
-  int64_t index_remappings_start = index_remappings_offsets[t];
-  int64_t index_remappings_end = index_remappings_offsets[t + 1];
-  int64_t capacity = index_remappings_end - index_remappings_start;
-
-  for (int32_t l = threadIdx.x; l < L; l += blockDim.x) {
-    int32_t idx = indices[indices_start + l];
-    dense_indices[indices_start + l] = capacity ? index_remappings[index_remappings_start + idx] : idx;
-  }
-}
-{% endif %}
-
 }
 
 at::Tensor int_nbit_split_embedding_codegen_forward_{{ wdesc }}_cuda(
     at::Tensor dev_weights,
-    at::Tensor uvm_weights,
-    at::Tensor weights_placements,
     at::Tensor weights_offsets,
     at::Tensor weights_tys,
     at::Tensor D_offsets,
@@ -1219,7 +955,6 @@ at::Tensor int_nbit_split_embedding_codegen_forward_{{ wdesc }}_cuda(
     int64_t max_int4_D,
     int64_t max_int8_D,
     int64_t max_float16_D,
-    int64_t max_float32_D,
     at::Tensor indices,
     at::Tensor offsets,
     int64_t pooling_mode,
@@ -1253,8 +988,6 @@ at::Tensor int_nbit_split_embedding_codegen_forward_{{ wdesc }}_cuda(
         0, \
         at::cuda::getCurrentCUDAStream()>>>( \
         dev_weights.packed_accessor64<uint8_t, 1, at::RestrictPtrTraits>(), \
-        uvm_weights.packed_accessor64<uint8_t, 1, at::RestrictPtrTraits>(), \
-        weights_placements.packed_accessor32<int32_t, 1, at::RestrictPtrTraits>(), \
         weights_offsets.packed_accessor32<int64_t, 1, at::RestrictPtrTraits>(), \
         weights_tys.packed_accessor32<uint8_t, 1, at::RestrictPtrTraits>(), \
         D_offsets.packed_accessor32<int32_t, 1, at::RestrictPtrTraits>(), \
@@ -1289,8 +1022,6 @@ at::Tensor int_nbit_split_embedding_codegen_forward_{{ wdesc }}_cuda(
         0, \
         at::cuda::getCurrentCUDAStream()>>>( \
         dev_weights.packed_accessor64<uint8_t, 1, at::RestrictPtrTraits>(), \
-        uvm_weights.packed_accessor64<uint8_t, 1, at::RestrictPtrTraits>(), \
-        weights_placements.packed_accessor32<int32_t, 1, at::RestrictPtrTraits>(), \
         weights_offsets.packed_accessor32<int64_t, 1, at::RestrictPtrTraits>(), \
         weights_tys.packed_accessor32<uint8_t, 1, at::RestrictPtrTraits>(), \
         D_offsets.packed_accessor32<int32_t, 1, at::RestrictPtrTraits>(), \
@@ -1328,8 +1059,6 @@ at::Tensor int_nbit_split_embedding_codegen_forward_{{ wdesc }}_cuda(
         0, \
         at::cuda::getCurrentCUDAStream()>>>( \
         dev_weights.packed_accessor64<uint8_t, 1, at::RestrictPtrTraits>(), \
-        uvm_weights.packed_accessor64<uint8_t, 1, at::RestrictPtrTraits>(), \
-        weights_placements.packed_accessor32<int32_t, 1, at::RestrictPtrTraits>(), \
         weights_offsets.packed_accessor32<int64_t, 1, at::RestrictPtrTraits>(), \
         weights_tys.packed_accessor32<uint8_t, 1, at::RestrictPtrTraits>(), \
         D_offsets.packed_accessor32<int32_t, 1, at::RestrictPtrTraits>(), \
@@ -1358,36 +1087,6 @@ at::Tensor int_nbit_split_embedding_codegen_forward_{{ wdesc }}_cuda(
       }
     }
     #undef X
-
-    #define X(OutputRowsPerThread, InputRowsInFlight, MinNum128BRows, MaxNum128BRows) \
-    nbit::fp32_split_embedding_codegen_forward_{{ wdesc }}_kernel_small_L<index_t, OutputRowsPerThread, kWarpsPerBlock, InputRowsInFlight, MinNum128BRows, MaxNum128BRows><<< \
-        nbit::div_round_up(T * nbit::div_round_up(B, OutputRowsPerThread), kWarpsPerBlock), \
-        dim3(nbit::kWarpSize, kWarpsPerBlock), \
-        0, \
-        at::cuda::getCurrentCUDAStream()>>>( \
-        dev_weights.packed_accessor64<uint8_t, 1, at::RestrictPtrTraits>(), \
-        uvm_weights.packed_accessor64<uint8_t, 1, at::RestrictPtrTraits>(), \
-        weights_placements.packed_accessor32<int32_t, 1, at::RestrictPtrTraits>(), \
-        weights_offsets.packed_accessor32<int64_t, 1, at::RestrictPtrTraits>(), \
-        weights_tys.packed_accessor32<uint8_t, 1, at::RestrictPtrTraits>(), \
-        D_offsets.packed_accessor32<int32_t, 1, at::RestrictPtrTraits>(), \
-        indices.packed_accessor32<index_t, 1, at::RestrictPtrTraits>(), \
-        offsets.packed_accessor32<index_t, 1, at::RestrictPtrTraits>(), \
-        pooling_mode, \
-        {% if weighted %} indice_weights.packed_accessor32<float, 1, at::RestrictPtrTraits>(), {% endif %} \
-        output.packed_accessor32<at::Half, 2, at::RestrictPtrTraits>() \
-    ); \
-    C10_CUDA_KERNEL_LAUNCH_CHECK(); \
-
-    if (max_float32_D > 0) {
-      auto max_fp32_128b_rows = nbit::div_round_up(nbit::padded_row_size_in_bytes(max_float32_D, nbit::SparseType::FP32), 128);
-      TORCH_CHECK(max_fp32_128b_rows <= 32);
-      // FP32 is used for numerical validations and tiny embeddings tables.
-      // We haven't carefully tuned the perf of FP32 embeddings.
-      X(1, 1, 0, 32);
-    }
-    #undef X
-
     // TODO: 2-bit kernels.
     return output;
 }
@@ -1396,24 +1095,22 @@ at::Tensor pruned_hashmap_lookup_{{ wdesc }}_cuda(
     at::Tensor indices,
     at::Tensor offsets,
     at::Tensor hash_table,
-    at::Tensor hash_table_offsets) {
+    int64_t T) {
     at::cuda::OptionalCUDAGuard device_guard;
     device_guard.set_index(indices.get_device());
     auto dense_indices = at::empty_like(indices);
-    int32_t T = hash_table_offsets.size(0) - 1;
     int32_t B = (offsets.size(0) - 1) / T;
     TORCH_CHECK(B > 0);
     TORCH_CHECK(hash_table.size(0) < std::numeric_limits<int32_t>::max());
     constexpr size_t kForwardMaxThreads = 256;
     nbit::int_nbit_split_embedding_codegen_forward_pruned_hashmap_lookup_{{ wdesc }}_kernel<<<
-        nbit::div_round_up(B * T + 1, kForwardMaxThreads / nbit::kWarpSize),
-        dim3(nbit::kWarpSize, kForwardMaxThreads / nbit::kWarpSize),
+        nbit::div_round_up(B * T + 1, kForwardMaxThreads / 32),
+        dim3(32, kForwardMaxThreads / 32),
         0,
         at::cuda::getCurrentCUDAStream()>>>(
             indices.packed_accessor32<int32_t, 1, at::RestrictPtrTraits>(),
             offsets.packed_accessor32<int32_t, 1, at::RestrictPtrTraits>(),
             hash_table.packed_accessor64<int32_t, 2, at::RestrictPtrTraits>(),
-            hash_table_offsets.packed_accessor32<int64_t, 1, at::RestrictPtrTraits>(),
             B,
             T,
             dense_indices.packed_accessor32<int32_t, 1, at::RestrictPtrTraits>()
@@ -1421,47 +1118,3 @@ at::Tensor pruned_hashmap_lookup_{{ wdesc }}_cuda(
     C10_CUDA_KERNEL_LAUNCH_CHECK();
     return dense_indices;
 }
-
-{% if not weighted %}
-at::Tensor pruned_array_lookup_cuda(
-    at::Tensor indices,
-    at::Tensor offsets,
-    at::Tensor index_remappings,
-    at::Tensor index_remappings_offsets) {
-  at::cuda::OptionalCUDAGuard device_guard;
-  device_guard.set_index(indices.get_device());
-  auto dense_indices = at::empty_like(indices);
-  int32_t T = index_remappings_offsets.size(0) - 1;
-  TORCH_CHECK(
-      (offsets.size(0) - 1) % T == 0,
-      "offsets.size() - 1 is not divisible by T! offsets.size: ",
-      offsets.size(0),
-      "T: ",
-      T
-  );
-  int32_t B = (offsets.size(0) - 1) / T;
-  TORCH_CHECK(B > 0, "offsets.size(): ", offsets.size(0), ", T: ", T, ", B: ", B);
-  TORCH_CHECK(index_remappings.size(0) < std::numeric_limits<int64_t>::max());
-  TORCH_CHECK(indices.dim() == 1, "Tensor dim: ", indices.dim());
-  TORCH_CHECK(offsets.dim() == 1, "Tensor dim: ", offsets.dim());
-  TORCH_CHECK(index_remappings.dim() == 1, "Tensor dim: ", index_remappings.dim());
-  TORCH_CHECK(index_remappings_offsets.dim() == 1, "Tensor dim: ", index_remappings_offsets.dim());
-  TORCH_CHECK(dense_indices.dim() == 1, "Tensor dim: ", dense_indices.dim());
-  constexpr size_t kForwardMaxThreads = 256;
-  nbit::int_nbit_split_embedding_codegen_forward_pruned_array_lookup_kernel<<<
-      nbit::div_round_up(offsets.size(0), kForwardMaxThreads / nbit::kWarpSize),
-      dim3(nbit::kWarpSize, kForwardMaxThreads / nbit::kWarpSize),
-      0,
-      at::cuda::getCurrentCUDAStream()>>>(
-          indices.packed_accessor32<int32_t, 1, at::RestrictPtrTraits>(),
-          offsets.packed_accessor32<int32_t, 1, at::RestrictPtrTraits>(),
-          index_remappings.packed_accessor32<int32_t, 1, at::RestrictPtrTraits>(),
-          index_remappings_offsets.packed_accessor32<int64_t, 1, at::RestrictPtrTraits>(),
-          B,
-          T,
-          dense_indices.packed_accessor32<int32_t, 1, at::RestrictPtrTraits>()
-  );
-  C10_CUDA_KERNEL_LAUNCH_CHECK();
-  return dense_indices;
-}
-{% endif %}

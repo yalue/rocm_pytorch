@@ -13,7 +13,9 @@ paths:
           content:
             '*/*':
               schema:
-                $ref: '#/components/schemas/Runs'
+                type: array
+                items:
+                  type: string
   /views:
     get:
       parameters:
@@ -174,15 +176,7 @@ paths:
           content:
             '*/*':
               schema:
-                type: object
-                required:
-                  - metadata
-                  - data
-                properties:
-                  metadata:
-                    $ref: '#/components/schemas/TableMetadata'
-                  data:
-                    $ref: '#/components/schemas/OperationTableData'
+                $ref: '#/components/schemas/OperationTableData'
   /operation/stack:
     get:
       parameters:
@@ -225,15 +219,7 @@ paths:
           content:
             '*/*':
               schema:
-                type: object
-                required:
-                  - metadata
-                  - data
-                properties:
-                  metadata:
-                    $ref: '#/components/schemas/TableMetadata'
-                  data:
-                    $ref: '#/components/schemas/CallStackTableData'
+                $ref: '#/components/schemas/CallStackTableData'
   /distributed/overlap:
     get:
       parameters:
@@ -365,16 +351,6 @@ paths:
           required: true
           schema:
             type: string
-        - in: query
-          name: start_ts
-          required: false
-          schema:
-            type: number
-        - in: query
-          name: end_ts
-          required: false
-          schema:
-            type: number
       responses:
         '200':
           description: successful operation
@@ -382,66 +358,6 @@ paths:
             '*/*':
               schema:
                 $ref: '#/components/schemas/MemoryData'
-  /memory_curve:
-    get:
-      parameters:
-        - in: query
-          name: run
-          required: true
-          schema:
-            type: string
-        - in: query
-          name: worker
-          required: true
-          schema:
-            type: string
-        - in: query
-          name: span
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: successful operation
-          content:
-            '*/*':
-              schema:
-                $ref: '#/components/schemas/MemoryCurve'
-  /memory_events:
-    get:
-      parameters:
-        - in: query
-          name: run
-          required: true
-          schema:
-            type: string
-        - in: query
-          name: worker
-          required: true
-          schema:
-            type: string
-        - in: query
-          name: span
-          required: true
-          schema:
-            type: string
-        - in: query
-          name: start_ts
-          required: false
-          schema:
-            type: number
-        - in: query
-          name: end_ts
-          required: false
-          schema:
-            type: number
-      responses:
-        '200':
-          description: successful operation
-          content:
-            '*/*':
-              schema:
-                $ref: '#/components/schemas/MemoryEventsData'
   /kernel:
     get:
       parameters:
@@ -510,31 +426,6 @@ paths:
             '*/*':
               schema:
                 $ref: '#/components/schemas/TableData'
-  /kernel/tc_pie:
-    get:
-      parameters:
-        - in: query
-          name: run
-          required: true
-          schema:
-            type: string
-        - in: query
-          name: worker
-          required: true
-          schema:
-            type: string
-        - in: query
-          name: span
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: successful operation
-          content:
-            '*/*':
-              schema:
-                $ref: '#/components/schemas/TensorCoresGraph'
   /trace:
     get:
       parameters:
@@ -562,18 +453,6 @@ paths:
                 type: object
 components:
   schemas:
-    Runs:
-      type: object
-      required:
-        - runs
-        - loading
-      properties:
-        runs:
-          type: array
-          items:
-            type: string
-        loading:
-          type: boolean
     Performance:
       type: object
       required:
@@ -691,33 +570,14 @@ components:
           $ref: '#/components/schemas/Graph'
         host_self_time:
           $ref: '#/components/schemas/Graph'
-    TableMetadata:
-      type: object
-      required:
-        - sort
-      properties:
-        sort:
-          type: string
-        tooltips:
-          type: object
     TableData:
       type: object
       required:
-        - metadata
         - data
       properties:
         data:
           $ref: '#/components/schemas/Graph'
-        metadata:
-          $ref: '#/components/schemas/TableMetadata'
     KernelGraph:
-      type: object
-      required:
-        - total
-      properties:
-        total:
-          $ref: '#/components/schemas/Graph'
-    TensorCoresGraph:
       type: object
       required:
         - total
@@ -751,12 +611,6 @@ components:
             type: number
           has_call_stack:
             type: boolean
-          tc_eligible:
-            type: string
-          tc_self_ratio:
-            type: number
-          tc_total_ratio:
-            type: number
     CallStackTableData:
       type: array
       items:
@@ -783,12 +637,6 @@ components:
             type: number
           call_stack:
             type: string
-          tc_eligible:
-            type: string
-          tc_self_ratio:
-            type: number
-          tc_total_ratio:
-            type: number
     DistributedGraph:
       type: object
       required:
@@ -853,47 +701,12 @@ components:
       type: object
       required:
         - metadata
-        - columns
-        - rows
+        - data
       properties:
         metadata:
           $ref: '#/components/schemas/MemoryTableMetadata'
-        columns:
-          type: array
-          items:
-            $ref: '#/components/schemas/GraphColumn'
-        rows:
+        data:
           type: object
-    MemoryEventsData:
-      type: object
-      required:
-        - metadata
-        - columns
-        - rows
-      properties:
-        metadata:
-          $ref: '#/components/schemas/MemoryEventsTableMetadata'
-        columns:
-          type: array
-          items:
-            $ref: '#/components/schemas/GraphColumn'
-        rows:
-          type: object
-    MemoryEventsTableMetadata:
-      type: object
-      required:
-        - title
-        - default_device
-        - value
-      properties:
-        title:
-          type: string
-        default_device:
-          type: string
-        search:
-          type: string
-        sort:
-          type: string
     MemoryTableMetadata:
       type: object
       required:
@@ -911,51 +724,3 @@ components:
           type: string
         sort:
           type: string
-    MemoryCurveMetadata:
-      type: object
-      required:
-        - default_device
-        - devices
-        - peaks
-        - totals
-        - first_ts
-        - time_metric
-        - memory_metric
-        - time_factor
-        - memory_factor
-      properties:
-        default_device:
-          type: string
-        devices:
-          type: array
-          items:
-            type: string
-        peaks:
-          type: object
-        totals:
-          type: object
-        first_ts:
-          type: number
-        time_metric:
-          type: string
-        memory_metric:
-          type: string
-        time_factor:
-          type: number
-        memory_factor:
-          type: number
-    MemoryCurve:
-      type: object
-      required:
-        - metadata
-        - columns
-        - rows
-      properties:
-        metadata:
-          $ref: '#/components/schemas/MemoryCurveMetadata'
-        columns:
-          type: array
-          items:
-            $ref: '#/components/schemas/GraphColumn'
-        rows:
-          type: object

@@ -33,14 +33,11 @@
 
 #include <google/protobuf/pyext/message.h>
 
-#include <structmember.h>  // A Python header file.
-
 #include <map>
 #include <memory>
 #include <string>
 #include <vector>
-
-#include <google/protobuf/stubs/strutil.h>
+#include <structmember.h>  // A Python header file.
 
 #ifndef PyVarObject_HEAD_INIT
 #define PyVarObject_HEAD_INIT(type, size) PyObject_HEAD_INIT(type) size,
@@ -243,7 +240,7 @@ static PyObject* New(PyTypeObject* type,
     }
     message_descriptor =
         GetDefaultDescriptorPool()->pool->FindMessageTypeByName(
-            StringParam(full_name, name_size));
+            std::string(full_name, name_size));
     if (message_descriptor == nullptr) {
       PyErr_Format(PyExc_KeyError,
                    "Can not find message descriptor %s "
@@ -459,7 +456,7 @@ static PyObject* GetClassAttribute(CMessageClass *self, PyObject* name) {
   Py_ssize_t attr_size;
   static const char kSuffix[] = "_FIELD_NUMBER";
   if (PyString_AsStringAndSize(name, &attr, &attr_size) >= 0 &&
-      HasSuffixString(StringPiece(attr, attr_size), kSuffix)) {
+      strings::EndsWith(StringPiece(attr, attr_size), kSuffix)) {
     std::string field_name(attr, attr_size - sizeof(kSuffix) + 1);
     LowerString(&field_name);
 
@@ -984,7 +981,7 @@ static PyObject* GetIntegerEnumValue(const FieldDescriptor& descriptor,
       return NULL;
     }
     const EnumValueDescriptor* enum_value_descriptor =
-        enum_descriptor->FindValueByName(StringParam(enum_label, size));
+        enum_descriptor->FindValueByName(std::string(enum_label, size));
     if (enum_value_descriptor == NULL) {
       PyErr_Format(PyExc_ValueError, "unknown enum label \"%s\"", enum_label);
       return NULL;
@@ -1399,7 +1396,7 @@ int HasFieldByDescriptor(CMessage* self,
 }
 
 const FieldDescriptor* FindFieldWithOneofs(const Message* message,
-                                           ConstStringParam field_name,
+                                           const std::string& field_name,
                                            bool* in_oneof) {
   *in_oneof = false;
   const Descriptor* descriptor = message->GetDescriptor();
@@ -1427,12 +1424,28 @@ bool CheckHasPresence(const FieldDescriptor* field_descriptor, bool in_oneof) {
     return false;
   }
 
-  if (!field_descriptor->has_presence()) {
-    PyErr_Format(PyExc_ValueError,
-                 "Can't test non-optional, non-submessage field \"%s.%s\" for "
-                 "presence in proto3.",
-                 message_name.c_str(), field_descriptor->name().c_str());
-    return false;
+  if (field_descriptor->file()->syntax() == FileDescriptor::SYNTAX_PROTO3) {
+    // HasField() for a oneof *itself* isn't supported.
+    if (in_oneof) {
+      PyErr_Format(PyExc_ValueError,
+                   "Can't test oneof field \"%s.%s\" for presence in proto3, "
+                   "use WhichOneof instead.", message_name.c_str(),
+                   field_descriptor->containing_oneof()->name().c_str());
+      return false;
+    }
+
+    // ...but HasField() for fields *in* a oneof is supported.
+    if (field_descriptor->containing_oneof() != NULL) {
+      return true;
+    }
+
+    if (field_descriptor->cpp_type() != FieldDescriptor::CPPTYPE_MESSAGE) {
+      PyErr_Format(
+          PyExc_ValueError,
+          "Can't test non-submessage field \"%s.%s\" for presence in proto3.",
+          message_name.c_str(), field_descriptor->name().c_str());
+      return false;
+    }
   }
 
   return true;
@@ -1455,7 +1468,7 @@ PyObject* HasField(CMessage* self, PyObject* arg) {
   Message* message = self->message;
   bool is_in_oneof;
   const FieldDescriptor* field_descriptor =
-      FindFieldWithOneofs(message, StringParam(field_name, size), &is_in_oneof);
+      FindFieldWithOneofs(message, std::string(field_name, size), &is_in_oneof);
   if (field_descriptor == NULL) {
     if (!is_in_oneof) {
       PyErr_Format(PyExc_ValueError, "Protocol message %s has no field %s.",
@@ -1632,7 +1645,7 @@ PyObject* ClearField(CMessage* self, PyObject* arg) {
   AssureWritable(self);
   bool is_in_oneof;
   const FieldDescriptor* field_descriptor = FindFieldWithOneofs(
-      self->message, StringParam(field_name, field_size), &is_in_oneof);
+      self->message, std::string(field_name, field_size), &is_in_oneof);
   if (field_descriptor == NULL) {
     if (is_in_oneof) {
       // We gave the name of a oneof, and none of its fields are set.
@@ -2033,12 +2046,13 @@ static PyObject* WhichOneof(CMessage* self, PyObject* arg) {
   char *name_data;
   if (PyString_AsStringAndSize(arg, &name_data, &name_size) < 0)
     return NULL;
+  std::string oneof_name = std::string(name_data, name_size);
   const OneofDescriptor* oneof_desc =
-      self->message->GetDescriptor()->FindOneofByName(
-          StringParam(name_data, name_size));
+      self->message->GetDescriptor()->FindOneofByName(oneof_name);
   if (oneof_desc == NULL) {
     PyErr_Format(PyExc_ValueError,
-                 "Protocol message has no oneof \"%s\" field.", name_data);
+                 "Protocol message has no oneof \"%s\" field.",
+                 oneof_name.c_str());
     return NULL;
   }
   const FieldDescriptor* field_in_oneof =
@@ -2169,21 +2183,19 @@ static PyObject* RichCompare(CMessage* self, PyObject* other, int opid) {
   // If other is not a message, it cannot be equal.
   if (!PyObject_TypeCheck(other, CMessage_Type)) {
     equals = false;
-  } else {
-    // Otherwise, we have a CMessage whose message we can inspect.
-    const google::protobuf::Message* other_message =
-        reinterpret_cast<CMessage*>(other)->message;
-    // If messages don't have the same descriptors, they are not equal.
-    if (equals &&
-        self->message->GetDescriptor() != other_message->GetDescriptor()) {
-      equals = false;
-    }
-    // Check the message contents.
-    if (equals &&
-        !google::protobuf::util::MessageDifferencer::Equals(
-            *self->message, *reinterpret_cast<CMessage*>(other)->message)) {
-      equals = false;
-    }
+  }
+  const google::protobuf::Message* other_message =
+      reinterpret_cast<CMessage*>(other)->message;
+  // If messages don't have the same descriptors, they are not equal.
+  if (equals &&
+      self->message->GetDescriptor() != other_message->GetDescriptor()) {
+    equals = false;
+  }
+  // Check the message contents.
+  if (equals && !google::protobuf::util::MessageDifferencer::Equals(
+          *self->message,
+          *reinterpret_cast<CMessage*>(other)->message)) {
+    equals = false;
   }
 
   if (equals ^ (opid == Py_EQ)) {

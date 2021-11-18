@@ -85,7 +85,7 @@ void SetPrimitiveVariables(const FieldDescriptor* descriptor,
       descriptor->options().deprecated() ? "@java.lang.Deprecated " : "";
   (*variables)["required"] = descriptor->is_required() ? "true" : "false";
 
-  if (SupportFieldPresence(descriptor)) {
+  if (SupportFieldPresence(descriptor->file())) {
     // For singular messages and builders, one bit is used for the hasField bit.
     (*variables)["get_has_field_bit_message"] = GenerateGetBit(messageBitIndex);
 
@@ -103,6 +103,9 @@ void SetPrimitiveVariables(const FieldDescriptor* descriptor,
     (*variables)["is_field_present_message"] =
         "!" + (*variables)["name"] + "_.isEmpty()";
   }
+
+  // For repeated builders, the underlying list tracks mutability state.
+  (*variables)["is_mutable"] = (*variables)["name"] + "_.isModifiable()";
 
   (*variables)["get_has_field_bit_from_local"] =
       GenerateGetBitFromLocal(builderBitIndex);
@@ -127,14 +130,14 @@ ImmutableStringFieldLiteGenerator::ImmutableStringFieldLiteGenerator(
 ImmutableStringFieldLiteGenerator::~ImmutableStringFieldLiteGenerator() {}
 
 int ImmutableStringFieldLiteGenerator::GetNumBitsForMessage() const {
-  return SupportFieldPresence(descriptor_) ? 1 : 0;
+  return SupportFieldPresence(descriptor_->file()) ? 1 : 0;
 }
 
 // A note about how strings are handled. In the SPEED and CODE_SIZE runtimes,
 // strings are not stored as java.lang.String in the Message because of two
 // issues:
 //
-//  1. It wouldn't roundtrip byte arrays that were not valid UTF-8 encoded
+//  1. It wouldn't roundtrip byte arrays that were not vaid UTF-8 encoded
 //     strings, but rather fields that were raw bytes incorrectly marked
 //     as strings in the proto file. This is common because in the proto1
 //     syntax, string was the way to indicate bytes and C++ engineers can
@@ -157,7 +160,7 @@ int ImmutableStringFieldLiteGenerator::GetNumBitsForMessage() const {
 //     shouldn't be necessary or used on devices.
 void ImmutableStringFieldLiteGenerator::GenerateInterfaceMembers(
     io::Printer* printer) const {
-  if (SupportFieldPresence(descriptor_)) {
+  if (SupportFieldPresence(descriptor_->file())) {
     WriteFieldAccessorDocComment(printer, descriptor_, HAZZER);
     printer->Print(variables_,
                    "$deprecation$boolean has$capitalized_name$();\n");
@@ -176,7 +179,7 @@ void ImmutableStringFieldLiteGenerator::GenerateMembers(
   printer->Print(variables_, "private java.lang.String $name$_;\n");
   PrintExtraFieldInfo(variables_, printer);
 
-  if (SupportFieldPresence(descriptor_)) {
+  if (SupportFieldPresence(descriptor_->file())) {
     WriteFieldAccessorDocComment(printer, descriptor_, HAZZER);
     printer->Print(
         variables_,
@@ -238,7 +241,7 @@ void ImmutableStringFieldLiteGenerator::GenerateMembers(
 
 void ImmutableStringFieldLiteGenerator::GenerateBuilderMembers(
     io::Printer* printer) const {
-  if (SupportFieldPresence(descriptor_)) {
+  if (SupportFieldPresence(descriptor_->file())) {
     WriteFieldAccessorDocComment(printer, descriptor_, HAZZER);
     printer->Print(
         variables_,
@@ -306,7 +309,7 @@ void ImmutableStringFieldLiteGenerator::GenerateFieldInfo(
   WriteIntToUtf16CharSequence(descriptor_->number(), output);
   WriteIntToUtf16CharSequence(GetExperimentalJavaFieldType(descriptor_),
                               output);
-  if (HasHasbit(descriptor_)) {
+  if (SupportFieldPresence(descriptor_->file())) {
     WriteIntToUtf16CharSequence(messageBitIndex_, output);
   }
   printer->Print(variables_, "\"$name$_\",\n");
@@ -338,7 +341,7 @@ void ImmutableStringOneofFieldLiteGenerator::GenerateMembers(
     io::Printer* printer) const {
   PrintExtraFieldInfo(variables_, printer);
 
-  if (SupportFieldPresence(descriptor_)) {
+  if (SupportFieldPresence(descriptor_->file())) {
     WriteFieldAccessorDocComment(printer, descriptor_, HAZZER);
     printer->Print(
         variables_,
@@ -418,7 +421,7 @@ void ImmutableStringOneofFieldLiteGenerator::GenerateFieldInfo(
 
 void ImmutableStringOneofFieldLiteGenerator::GenerateBuilderMembers(
     io::Printer* printer) const {
-  if (SupportFieldPresence(descriptor_)) {
+  if (SupportFieldPresence(descriptor_->file())) {
     WriteFieldAccessorDocComment(printer, descriptor_, HAZZER);
     printer->Print(
         variables_,
@@ -564,12 +567,9 @@ void RepeatedImmutableStringFieldLiteGenerator::GenerateMembers(
   printer->Print(
       variables_,
       "private void ensure$capitalized_name$IsMutable() {\n"
-      // Use a temporary to avoid a redundant iget-object.
-      "  com.google.protobuf.Internal.ProtobufList<java.lang.String> tmp =\n"
-      "      $name$_;"
-      "  if (!tmp.isModifiable()) {\n"
+      "  if (!$is_mutable$) {\n"
       "    $name$_ =\n"
-      "        com.google.protobuf.GeneratedMessageLite.mutableCopy(tmp);\n"
+      "        com.google.protobuf.GeneratedMessageLite.mutableCopy($name$_);\n"
       "   }\n"
       "}\n");
 

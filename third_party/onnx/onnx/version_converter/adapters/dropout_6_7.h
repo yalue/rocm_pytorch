@@ -21,9 +21,8 @@ class Dropout_6_7 final : public Adapter {
       }
     }
 
-    Node* adapt(std::shared_ptr<Graph> graph, Node* node) const override {
+    void adapt(std::shared_ptr<Graph> graph, Node* node) const override {
       adapt_dropout_6_7(graph, node);
-      return node;
     }
 };
 

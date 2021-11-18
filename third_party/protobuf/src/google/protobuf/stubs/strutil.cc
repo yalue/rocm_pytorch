@@ -176,8 +176,10 @@ string StringReplace(const string& s, const string& oldsub,
 // the characters in the string, not the entire string as a single delimiter.
 // ----------------------------------------------------------------------
 template <typename ITR>
-static inline void SplitStringToIteratorUsing(StringPiece full,
-                                              const char *delim, ITR &result) {
+static inline
+void SplitStringToIteratorUsing(const string& full,
+                                const char* delim,
+                                ITR& result) {
   // Optimize the common case where delim is a single character.
   if (delim[0] != '\0' && delim[1] == '\0') {
     char c = delim[0];
@@ -189,7 +191,7 @@ static inline void SplitStringToIteratorUsing(StringPiece full,
       } else {
         const char* start = p;
         while (++p != end && *p != c);
-        *result++ = std::string(start, p - start);
+        *result++ = string(start, p - start);
       }
     }
     return;
@@ -200,17 +202,17 @@ static inline void SplitStringToIteratorUsing(StringPiece full,
   while (begin_index != string::npos) {
     end_index = full.find_first_of(delim, begin_index);
     if (end_index == string::npos) {
-      *result++ = std::string(full.substr(begin_index));
+      *result++ = full.substr(begin_index);
       return;
     }
-    *result++ =
-        std::string(full.substr(begin_index, (end_index - begin_index)));
+    *result++ = full.substr(begin_index, (end_index - begin_index));
     begin_index = full.find_first_not_of(delim, end_index);
   }
 }
 
-void SplitStringUsing(StringPiece full, const char *delim,
-                      std::vector<string> *result) {
+void SplitStringUsing(const string& full,
+                      const char* delim,
+                      std::vector<string>* result) {
   std::back_insert_iterator< std::vector<string> > it(*result);
   SplitStringToIteratorUsing(full, delim, it);
 }
@@ -226,28 +228,29 @@ void SplitStringUsing(StringPiece full, const char *delim,
 //
 // If "pieces" is negative for some reason, it returns the whole string
 // ----------------------------------------------------------------------
-template <typename ITR>
-static inline void SplitStringToIteratorAllowEmpty(StringPiece full,
-                                                   const char *delim,
-                                                   int pieces, ITR &result) {
+template <typename StringType, typename ITR>
+static inline
+void SplitStringToIteratorAllowEmpty(const StringType& full,
+                                     const char* delim,
+                                     int pieces,
+                                     ITR& result) {
   string::size_type begin_index, end_index;
   begin_index = 0;
 
   for (int i = 0; (i < pieces-1) || (pieces == 0); i++) {
     end_index = full.find_first_of(delim, begin_index);
     if (end_index == string::npos) {
-      *result++ = std::string(full.substr(begin_index));
+      *result++ = full.substr(begin_index);
       return;
     }
-    *result++ =
-        std::string(full.substr(begin_index, (end_index - begin_index)));
+    *result++ = full.substr(begin_index, (end_index - begin_index));
     begin_index = end_index + 1;
   }
-  *result++ = std::string(full.substr(begin_index));
+  *result++ = full.substr(begin_index);
 }
 
-void SplitStringAllowEmpty(StringPiece full, const char *delim,
-                           std::vector<string> *result) {
+void SplitStringAllowEmpty(const string& full, const char* delim,
+                           std::vector<string>* result) {
   std::back_insert_iterator<std::vector<string> > it(*result);
   SplitStringToIteratorAllowEmpty(full, delim, 0, it);
 }
@@ -1432,44 +1435,32 @@ AlphaNum::AlphaNum(strings::Hex hex) {
 // after the area just overwritten.  It comes in multiple flavors to minimize
 // call overhead.
 static char *Append1(char *out, const AlphaNum &x) {
-  if (x.size() > 0) {
-    memcpy(out, x.data(), x.size());
-    out += x.size();
-  }
-  return out;
+  memcpy(out, x.data(), x.size());
+  return out + x.size();
 }
 
 static char *Append2(char *out, const AlphaNum &x1, const AlphaNum &x2) {
-  if (x1.size() > 0) {
-    memcpy(out, x1.data(), x1.size());
-    out += x1.size();
-  }
-  if (x2.size() > 0) {
-    memcpy(out, x2.data(), x2.size());
-    out += x2.size();
-  }
-  return out;
+  memcpy(out, x1.data(), x1.size());
+  out += x1.size();
+
+  memcpy(out, x2.data(), x2.size());
+  return out + x2.size();
 }
 
-static char *Append4(char *out, const AlphaNum &x1, const AlphaNum &x2,
+static char *Append4(char *out,
+                     const AlphaNum &x1, const AlphaNum &x2,
                      const AlphaNum &x3, const AlphaNum &x4) {
-  if (x1.size() > 0) {
-    memcpy(out, x1.data(), x1.size());
-    out += x1.size();
-  }
-  if (x2.size() > 0) {
-    memcpy(out, x2.data(), x2.size());
-    out += x2.size();
-  }
-  if (x3.size() > 0) {
-    memcpy(out, x3.data(), x3.size());
-    out += x3.size();
-  }
-  if (x4.size() > 0) {
-    memcpy(out, x4.data(), x4.size());
-    out += x4.size();
-  }
-  return out;
+  memcpy(out, x1.data(), x1.size());
+  out += x1.size();
+
+  memcpy(out, x2.data(), x2.size());
+  out += x2.size();
+
+  memcpy(out, x3.data(), x3.size());
+  out += x3.size();
+
+  memcpy(out, x4.data(), x4.size());
+  return out + x4.size();
 }
 
 string StrCat(const AlphaNum &a, const AlphaNum &b) {
@@ -2281,19 +2272,16 @@ int EncodeAsUTF8Char(uint32 code_point, char* output) {
 
 // Table of UTF-8 character lengths, based on first byte
 static const unsigned char kUTF8LenTbl[256] = {
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+  1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,
+  1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,
+  1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,
+  1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,
 
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2,
-    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-    2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
-    3, 3, 4, 4, 4, 4, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
+  1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,
+  1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,
+  2,2,2,2,2,2,2,2, 2,2,2,2,2,2,2,2, 2,2,2,2,2,2,2,2, 2,2,2,2,2,2,2,2,
+  3,3,3,3,3,3,3,3, 3,3,3,3,3,3,3,3, 4,4,4,4,4,4,4,4, 4,4,4,4,4,4,4,4
+};
 
 // Return length of a single UTF-8 source character
 int UTF8FirstLetterNumBytes(const char* src, int len) {

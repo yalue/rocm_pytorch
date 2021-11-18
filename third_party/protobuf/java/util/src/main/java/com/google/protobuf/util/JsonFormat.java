@@ -233,7 +233,7 @@ public class JsonFormat {
           registry,
           oldRegistry,
           alwaysOutputDefaultValueFields,
-          includingDefaultValueFields,
+          Collections.<FieldDescriptor>emptySet(),
           preservingProtoFieldNames,
           omittingInsignificantWhitespace,
           true,

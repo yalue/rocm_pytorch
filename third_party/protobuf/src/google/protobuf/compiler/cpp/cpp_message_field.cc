@@ -66,10 +66,10 @@ void SetMessageVariables(const FieldDescriptor* descriptor,
   (*variables)["type_default_instance_ptr"] =
       QualifiedDefaultInstancePtr(descriptor->message_type(), options);
   (*variables)["type_reference_function"] =
-      implicit_weak ? ("  ::" + (*variables)["proto_ns"] +
-                       "::internal::StrongReference(" +
-                       (*variables)["type_default_instance"] + ");\n")
-                    : "";
+      implicit_weak
+          ? ("  " + (*variables)["proto_ns"] + "::internal::StrongReference(" +
+             (*variables)["type_default_instance"] + ");\n")
+          : "";
   // NOTE: Escaped here to unblock proto1->proto2 migration.
   // TODO(liujisi): Extend this to apply for other conflicting methods.
   (*variables)["release_name"] =
@@ -104,43 +104,17 @@ void MessageFieldGenerator::GeneratePrivateMembers(io::Printer* printer) const {
 void MessageFieldGenerator::GenerateAccessorDeclarations(
     io::Printer* printer) const {
   Formatter format(printer, variables_);
-  if (!IsFieldUsed(descriptor_, options_)) {
-    format(
-        "$deprecated_attr$const $type$& ${1$$name$$}$() const { "
-        "__builtin_trap(); }\n"
-        "$deprecated_attr$$type$* ${1$$release_name$$}$() { "
-        "__builtin_trap(); }\n"
-        "$deprecated_attr$$type$* ${1$mutable_$name$$}$() { "
-        "__builtin_trap(); }\n"
-        "$deprecated_attr$void ${1$set_allocated_$name$$}$"
-        "($type$* $name$) { __builtin_trap(); }\n",
-        descriptor_);
-    if (SupportsArenas(descriptor_)) {
-      format(
-          "$deprecated_attr$void "
-          "${1$unsafe_arena_set_allocated_$name$$}$(\n"
-          "    $type$* $name$) { __builtin_trap(); }\n"
-          "$deprecated_attr$$type$* ${1$unsafe_arena_release_$name$$}$() { "
-          "__builtin_trap(); }\n",
-          descriptor_);
-    }
-    return;
-  }
   format(
       "$deprecated_attr$const $type$& ${1$$name$$}$() const;\n"
       "$deprecated_attr$$type$* ${1$$release_name$$}$();\n"
       "$deprecated_attr$$type$* ${1$mutable_$name$$}$();\n"
       "$deprecated_attr$void ${1$set_allocated_$name$$}$"
-      "($type$* $name$);\n",
+      "($type$* $name$);\n"
+      "private:\n"
+      "const $type$& ${1$_internal_$name$$}$() const;\n"
+      "$type$* ${1$_internal_mutable_$name$$}$();\n"
+      "public:\n",
       descriptor_);
-  if (IsFieldUsed(descriptor_, options_)) {
-    format(
-        "private:\n"
-        "const $type$& ${1$_internal_$name$$}$() const;\n"
-        "$type$* ${1$_internal_mutable_$name$$}$();\n"
-        "public:\n",
-        descriptor_);
-  }
   if (SupportsArenas(descriptor_)) {
     format(
         "$deprecated_attr$void "
@@ -153,6 +127,27 @@ void MessageFieldGenerator::GenerateAccessorDeclarations(
 
 void MessageFieldGenerator::GenerateNonInlineAccessorDefinitions(
     io::Printer* printer) const {
+  Formatter format(printer, variables_);
+  if (SupportsArenas(descriptor_)) {
+    format(
+        "void $classname$::unsafe_arena_set_allocated_$name$(\n"
+        "    $type$* $name$) {\n"
+        "$annotate_accessor$"
+        // If we're not on an arena, free whatever we were holding before.
+        // (If we are on arena, we can just forget the earlier pointer.)
+        "  if (GetArenaNoVirtual() == nullptr) {\n"
+        "    delete $name$_;\n"
+        "  }\n"
+        "  $name$_ = $name$;\n"
+        "  if ($name$) {\n"
+        "    $set_hasbit$\n"
+        "  } else {\n"
+        "    $clear_hasbit$\n"
+        "  }\n"
+        "  // @@protoc_insertion_point(field_unsafe_arena_set_allocated"
+        ":$full_name$)\n"
+        "}\n");
+  }
 }
 
 void MessageFieldGenerator::GenerateInlineAccessorDefinitions(
@@ -173,37 +168,9 @@ void MessageFieldGenerator::GenerateInlineAccessorDefinitions(
 
   if (SupportsArenas(descriptor_)) {
     format(
-        "inline void $classname$::unsafe_arena_set_allocated_$name$(\n"
-        "    $type$* $name$) {\n"
-        "$annotate_accessor$"
-        // If we're not on an arena, free whatever we were holding before.
-        // (If we are on arena, we can just forget the earlier pointer.)
-        "  if (GetArena() == nullptr) {\n"
-        "    delete reinterpret_cast<::$proto_ns$::MessageLite*>($name$_);\n"
-        "  }\n");
-    if (implicit_weak_field_) {
-      format(
-          "  $name$_ = "
-          "reinterpret_cast<::$proto_ns$::MessageLite*>($name$);\n");
-    } else {
-      format("  $name$_ = $name$;\n");
-    }
-    format(
-        "  if ($name$) {\n"
-        "    $set_hasbit$\n"
-        "  } else {\n"
-        "    $clear_hasbit$\n"
-        "  }\n"
-        "  // @@protoc_insertion_point(field_unsafe_arena_set_allocated"
-        ":$full_name$)\n"
-        "}\n");
-    format(
         "inline $type$* $classname$::$release_name$() {\n"
-        "$type_reference_function$"
-        "  $clear_hasbit$\n"
-        "  $type$* temp = $casted_member$;\n"
-        "  $name$_ = nullptr;\n"
-        "  if (GetArena() != nullptr) {\n"
+        "  auto temp = unsafe_arena_release_$name$();\n"
+        "  if (GetArenaNoVirtual() != nullptr) {\n"
         "    temp = ::$proto_ns$::internal::DuplicateIfNonNull(temp);\n"
         "  }\n"
         "  return temp;\n"
@@ -227,7 +194,7 @@ void MessageFieldGenerator::GenerateInlineAccessorDefinitions(
       "$type_reference_function$"
       "  $set_hasbit$\n"
       "  if ($name$_ == nullptr) {\n"
-      "    auto* p = CreateMaybeMessage<$type$>(GetArena());\n");
+      "    auto* p = CreateMaybeMessage<$type$>(GetArenaNoVirtual());\n");
   if (implicit_weak_field_) {
     format("    $name$_ = reinterpret_cast<::$proto_ns$::MessageLite*>(p);\n");
   } else {
@@ -248,7 +215,7 @@ void MessageFieldGenerator::GenerateInlineAccessorDefinitions(
   format(
       "inline void $classname$::set_allocated_$name$($type$* $name$) {\n"
       "$annotate_accessor$"
-      "  ::$proto_ns$::Arena* message_arena = GetArena();\n");
+      "  ::$proto_ns$::Arena* message_arena = GetArenaNoVirtual();\n");
   format("  if (message_arena == nullptr) {\n");
   if (IsCrossFileMessage(descriptor_)) {
     format(
@@ -342,11 +309,12 @@ void MessageFieldGenerator::GenerateInternalAccessorDefinitions(
           "    if ($type_default_instance_ptr$ == nullptr) {\n"
           "      msg->$name$_ = ::$proto_ns$::Arena::CreateMessage<\n"
           "          ::$proto_ns$::internal::ImplicitWeakMessage>(\n"
-          "              msg->GetArena());\n"
+          "              msg->GetArenaNoVirtual());\n"
           "    } else {\n"
           "      msg->$name$_ = reinterpret_cast<const "
           "::$proto_ns$::MessageLite*>(\n"
-          "          $type_default_instance_ptr$)->New(msg->GetArena());\n"
+          "          $type_default_instance_ptr$)->New("
+          "msg->GetArenaNoVirtual());\n"
           "    }\n"
           "  }\n"
           "  return msg->$name$_;\n"
@@ -385,14 +353,12 @@ void MessageFieldGenerator::GenerateInternalAccessorDefinitions(
 }
 
 void MessageFieldGenerator::GenerateClearingCode(io::Printer* printer) const {
-  GOOGLE_CHECK(IsFieldUsed(descriptor_, options_));
-
   Formatter format(printer, variables_);
   if (!HasFieldPresence(descriptor_->file())) {
     // If we don't have has-bits, message presence is indicated only by ptr !=
     // NULL. Thus on clear, we need to delete the object.
     format(
-        "if (GetArena() == nullptr && $name$_ != nullptr) {\n"
+        "if (GetArenaNoVirtual() == nullptr && $name$_ != nullptr) {\n"
         "  delete $name$_;\n"
         "}\n"
         "$name$_ = nullptr;\n");
@@ -403,14 +369,12 @@ void MessageFieldGenerator::GenerateClearingCode(io::Printer* printer) const {
 
 void MessageFieldGenerator::GenerateMessageClearingCode(
     io::Printer* printer) const {
-  GOOGLE_CHECK(IsFieldUsed(descriptor_, options_));
-
   Formatter format(printer, variables_);
   if (!HasFieldPresence(descriptor_->file())) {
     // If we don't have has-bits, message presence is indicated only by ptr !=
     // NULL. Thus on clear, we need to delete the object.
     format(
-        "if (GetArena() == nullptr && $name$_ != nullptr) {\n"
+        "if (GetArenaNoVirtual() == nullptr && $name$_ != nullptr) {\n"
         "  delete $name$_;\n"
         "}\n"
         "$name$_ = nullptr;\n");
@@ -422,8 +386,6 @@ void MessageFieldGenerator::GenerateMessageClearingCode(
 }
 
 void MessageFieldGenerator::GenerateMergingCode(io::Printer* printer) const {
-  GOOGLE_CHECK(IsFieldUsed(descriptor_, options_));
-
   Formatter format(printer, variables_);
   if (implicit_weak_field_) {
     format(
@@ -437,15 +399,11 @@ void MessageFieldGenerator::GenerateMergingCode(io::Printer* printer) const {
 }
 
 void MessageFieldGenerator::GenerateSwappingCode(io::Printer* printer) const {
-  GOOGLE_CHECK(IsFieldUsed(descriptor_, options_));
-
   Formatter format(printer, variables_);
   format("swap($name$_, other->$name$_);\n");
 }
 
 void MessageFieldGenerator::GenerateDestructorCode(io::Printer* printer) const {
-  GOOGLE_CHECK(IsFieldUsed(descriptor_, options_));
-
   Formatter format(printer, variables_);
   if (options_.opensource_runtime) {
     // TODO(gerbens) Remove this when we don't need to destruct default
@@ -460,16 +418,12 @@ void MessageFieldGenerator::GenerateDestructorCode(io::Printer* printer) const {
 
 void MessageFieldGenerator::GenerateConstructorCode(
     io::Printer* printer) const {
-  GOOGLE_CHECK(IsFieldUsed(descriptor_, options_));
-
   Formatter format(printer, variables_);
   format("$name$_ = nullptr;\n");
 }
 
 void MessageFieldGenerator::GenerateCopyConstructorCode(
     io::Printer* printer) const {
-  GOOGLE_CHECK(IsFieldUsed(descriptor_, options_));
-
   Formatter format(printer, variables_);
   format(
       "if (from._internal_has_$name$()) {\n"
@@ -481,8 +435,6 @@ void MessageFieldGenerator::GenerateCopyConstructorCode(
 
 void MessageFieldGenerator::GenerateSerializeWithCachedSizesToArray(
     io::Printer* printer) const {
-  GOOGLE_CHECK(IsFieldUsed(descriptor_, options_));
-
   Formatter format(printer, variables_);
   format(
       "target = stream->EnsureSpace(target);\n"
@@ -492,8 +444,6 @@ void MessageFieldGenerator::GenerateSerializeWithCachedSizesToArray(
 }
 
 void MessageFieldGenerator::GenerateByteSize(io::Printer* printer) const {
-  GOOGLE_CHECK(IsFieldUsed(descriptor_, options_));
-
   Formatter format(printer, variables_);
   format(
       "total_size += $tag_size$ +\n"
@@ -518,7 +468,7 @@ void MessageOneofFieldGenerator::GenerateNonInlineAccessorDefinitions(
   format(
       "void $classname$::set_allocated_$name$($type$* $name$) {\n"
       "$annotate_accessor$"
-      "  ::$proto_ns$::Arena* message_arena = GetArena();\n"
+      "  ::$proto_ns$::Arena* message_arena = GetArenaNoVirtual();\n"
       "  clear_$oneof_name$();\n"
       "  if ($name$) {\n");
   if (SupportsArenas(descriptor_->message_type()) &&
@@ -560,7 +510,7 @@ void MessageOneofFieldGenerator::GenerateInlineAccessorDefinitions(
       "      $type$* temp = $field_member$;\n");
   if (SupportsArenas(descriptor_)) {
     format(
-        "    if (GetArena() != nullptr) {\n"
+        "    if (GetArenaNoVirtual() != nullptr) {\n"
         "      temp = ::$proto_ns$::internal::DuplicateIfNonNull(temp);\n"
         "    }\n");
   }
@@ -620,7 +570,8 @@ void MessageOneofFieldGenerator::GenerateInlineAccessorDefinitions(
       "  if (!_internal_has_$name$()) {\n"
       "    clear_$oneof_name$();\n"
       "    set_has_$name$();\n"
-      "    $field_member$ = CreateMaybeMessage< $type$ >(GetArena());\n"
+      "    $field_member$ = CreateMaybeMessage< $type$ >(\n"
+      "        GetArenaNoVirtual());\n"
       "  }\n"
       "  return $field_member$;\n"
       "}\n"
@@ -633,12 +584,10 @@ void MessageOneofFieldGenerator::GenerateInlineAccessorDefinitions(
 
 void MessageOneofFieldGenerator::GenerateClearingCode(
     io::Printer* printer) const {
-  GOOGLE_CHECK(IsFieldUsed(descriptor_, options_));
-
   Formatter format(printer, variables_);
   if (SupportsArenas(descriptor_)) {
     format(
-        "if (GetArena() == nullptr) {\n"
+        "if (GetArenaNoVirtual() == nullptr) {\n"
         "  delete $field_member$;\n"
         "}\n");
   } else {
@@ -694,35 +643,14 @@ void RepeatedMessageFieldGenerator::GeneratePrivateMembers(
 void RepeatedMessageFieldGenerator::GenerateAccessorDeclarations(
     io::Printer* printer) const {
   Formatter format(printer, variables_);
-  if (!IsFieldUsed(descriptor_, options_)) {
-    format(
-        "$deprecated_attr$$type$* ${1$mutable_$name$$}$(int index) { "
-        "__builtin_trap(); }\n"
-        "$deprecated_attr$::$proto_ns$::RepeatedPtrField< $type$ >*\n"
-        "    ${1$mutable_$name$$}$() { __builtin_trap(); }\n"
-        "$deprecated_attr$const $type$& ${1$$name$$}$(int index) const { "
-        "__builtin_trap(); }\n"
-        "$deprecated_attr$$type$* ${1$add_$name$$}$() { "
-        "__builtin_trap(); }\n"
-        "$deprecated_attr$const ::$proto_ns$::RepeatedPtrField< $type$ >&\n"
-        "    ${1$$name$$}$() const { __builtin_trap(); }\n",
-        descriptor_);
-    return;
-  }
   format(
       "$deprecated_attr$$type$* ${1$mutable_$name$$}$(int index);\n"
       "$deprecated_attr$::$proto_ns$::RepeatedPtrField< $type$ >*\n"
-      "    ${1$mutable_$name$$}$();\n",
-      descriptor_);
-  if (IsFieldUsed(descriptor_, options_)) {
-    format(
-        "private:\n"
-        "const $type$& ${1$_internal_$name$$}$(int index) const;\n"
-        "$type$* ${1$_internal_add_$name$$}$();\n"
-        "public:\n",
-        descriptor_);
-  }
-  format(
+      "    ${1$mutable_$name$$}$();\n"
+      "private:\n"
+      "const $type$& ${1$_internal_$name$$}$(int index) const;\n"
+      "$type$* ${1$_internal_add_$name$$}$();\n"
+      "public:\n"
       "$deprecated_attr$const $type$& ${1$$name$$}$(int index) const;\n"
       "$deprecated_attr$$type$* ${1$add_$name$$}$();\n"
       "$deprecated_attr$const ::$proto_ns$::RepeatedPtrField< $type$ >&\n"
@@ -794,24 +722,18 @@ void RepeatedMessageFieldGenerator::GenerateInlineAccessorDefinitions(
 
 void RepeatedMessageFieldGenerator::GenerateClearingCode(
     io::Printer* printer) const {
-  GOOGLE_CHECK(IsFieldUsed(descriptor_, options_));
-
   Formatter format(printer, variables_);
   format("$name$_.Clear();\n");
 }
 
 void RepeatedMessageFieldGenerator::GenerateMergingCode(
     io::Printer* printer) const {
-  GOOGLE_CHECK(IsFieldUsed(descriptor_, options_));
-
   Formatter format(printer, variables_);
   format("$name$_.MergeFrom(from.$name$_);\n");
 }
 
 void RepeatedMessageFieldGenerator::GenerateSwappingCode(
     io::Printer* printer) const {
-  GOOGLE_CHECK(IsFieldUsed(descriptor_, options_));
-
   Formatter format(printer, variables_);
   format("$name$_.InternalSwap(&other->$name$_);\n");
 }
@@ -823,8 +745,6 @@ void RepeatedMessageFieldGenerator::GenerateConstructorCode(
 
 void RepeatedMessageFieldGenerator::GenerateSerializeWithCachedSizesToArray(
     io::Printer* printer) const {
-  GOOGLE_CHECK(IsFieldUsed(descriptor_, options_));
-
   Formatter format(printer, variables_);
   if (implicit_weak_field_) {
     format(
@@ -850,8 +770,6 @@ void RepeatedMessageFieldGenerator::GenerateSerializeWithCachedSizesToArray(
 
 void RepeatedMessageFieldGenerator::GenerateByteSize(
     io::Printer* printer) const {
-  GOOGLE_CHECK(IsFieldUsed(descriptor_, options_));
-
   Formatter format(printer, variables_);
   format(
       "total_size += $tag_size$UL * this->_internal_$name$_size();\n"

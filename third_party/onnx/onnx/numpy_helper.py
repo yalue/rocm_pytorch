@@ -8,9 +8,8 @@ from __future__ import unicode_literals
 import sys
 
 import numpy as np  # type: ignore
-from onnx import TensorProto, MapProto, SequenceProto, OptionalProto
+from onnx import TensorProto, MapProto, SequenceProto, TypeProto
 from onnx import mapping, helper
-from onnx.external_data_helper import load_external_data_for_tensor, uses_external_data
 from six import text_type, binary_type
 from typing import Sequence, Any, Optional, Text, List, Dict
 
@@ -19,12 +18,11 @@ def combine_pairs_to_complex(fa):  # type: (Sequence[int]) -> Sequence[np.comple
     return [complex(fa[i * 2], fa[i * 2 + 1]) for i in range(len(fa) // 2)]
 
 
-def to_array(tensor, base_dir=""):  # type: (TensorProto, Text) -> np.ndarray[Any]
+def to_array(tensor):  # type: (TensorProto) -> np.ndarray[Any]
     """Converts a tensor def object to a numpy array.
 
     Inputs:
         tensor: a TensorProto object.
-        base_dir: if external tensor exists, base_dir can help to find the path to it
     Returns:
         arr: the converted array.
     """
@@ -46,10 +44,6 @@ def to_array(tensor, base_dir=""):  # type: (TensorProto, Text) -> np.ndarray[An
         ss = list(s.decode('utf-8') for s in utf8_strings)
         return np.asarray(ss).astype(np_dtype).reshape(dims)
 
-    # Load raw data from external tensor if it exists
-    if uses_external_data(tensor):
-        load_external_data_for_tensor(tensor, base_dir)
-
     if tensor.HasField("raw_data"):
         # Raw_bytes support: using frombuffer.
         if sys.byteorder == 'big':
@@ -59,27 +53,27 @@ def to_array(tensor, base_dir=""):  # type: (TensorProto, Text) -> np.ndarray[An
             tensor.raw_data,
             dtype=np_dtype).reshape(dims)
     else:
-        # float16/bfloat16 is stored as int32 (uint16 type); Need view to get the original value
-        if (tensor_dtype == TensorProto.FLOAT16
-                or tensor_dtype == TensorProto.BFLOAT16):
+        data = getattr(tensor, storage_field),  # type: Sequence[np.complex64]
+        if (tensor_dtype == TensorProto.COMPLEX64
+                or tensor_dtype == TensorProto.COMPLEX128):
+            data = combine_pairs_to_complex(data)
+        # F16 is stored as int32; Need view to get the original value
+        if tensor_dtype == TensorProto.FLOAT16:
             return (
                 np.asarray(
                     tensor.int32_data,
                     dtype=np.uint16)
                 .reshape(dims)
                 .view(np.float16))
-        data = getattr(tensor, storage_field)
-        if (tensor_dtype == TensorProto.COMPLEX64
-                or tensor_dtype == TensorProto.COMPLEX128):
-            data = combine_pairs_to_complex(data)
-
-        return (
-            np.asarray(
-                data,
-                dtype=storage_np_dtype)
-            .astype(np_dtype)
-            .reshape(dims)
-        )
+        # Otherwise simply use astype to convert; e.g., int->float, float->float
+        else:
+            return (
+                np.asarray(
+                    data,
+                    dtype=storage_np_dtype)
+                .astype(np_dtype)
+                .reshape(dims)
+            )
 
 
 def from_array(arr, name=None):  # type: (np.ndarray[Any], Optional[Text]) -> TensorProto
@@ -96,7 +90,7 @@ def from_array(arr, name=None):  # type: (np.ndarray[Any], Optional[Text]) -> Te
     if name:
         tensor.name = name
 
-    if arr.dtype == object:
+    if arr.dtype == np.object:
         # Special care for strings.
         tensor.data_type = mapping.NP_TYPE_TO_TENSOR_TYPE[arr.dtype]
         # TODO: Introduce full string support.
@@ -105,7 +99,7 @@ def from_array(arr, name=None):  # type: (np.ndarray[Any], Optional[Text]) -> Te
         # object. If you want more complex shapes then follow the below instructions.
         # Unlike other types where the shape is automatically inferred from
         # nested arrays of values, the only reliable way now to feed strings
-        # is to put them into a flat array then specify type astype(object)
+        # is to put them into a flat array then specify type astype(np.object)
         # (otherwise all strings may have different types depending on their length)
         # and then specify shape .reshape([x, y, z])
         flat_array = arr.flatten()
@@ -276,84 +270,6 @@ def from_dict(dict, name=None):  # type: (Dict[Any, Any], Optional[Text]) -> Map
         map.keys.extend(keys)
     map.values.CopyFrom(value_seq)
     return map
-
-
-def to_optional(optional):  # type: (OptionalProto) -> Optional[Any]
-    """Converts an optional def to a Python optional.
-
-    Inputs:
-        optional: an OptionalProto object.
-    Returns:
-        opt: the converted optional.
-    """
-    opt = None  # type: Optional[Any]
-    elem_type = optional.elem_type
-    if elem_type == OptionalProto.UNDEFINED:
-        return opt
-    value_field = mapping.OPTIONAL_ELEMENT_TYPE_TO_FIELD[elem_type]
-    value = getattr(optional, value_field)
-    # TODO: create a map and replace conditional branches
-    if elem_type == OptionalProto.TENSOR or elem_type == OptionalProto.SPARSE_TENSOR:
-        opt = to_array(value)
-    elif elem_type == OptionalProto.SEQUENCE:
-        opt = to_list(value)
-    elif elem_type == OptionalProto.MAP:
-        opt = to_dict(value)
-    elif elem_type == OptionalProto.OPTIONAL:
-        return to_optional(value)
-    else:
-        raise TypeError("The element type in the input optional is not supported.")
-    return opt
-
-
-def from_optional(
-        opt,  # type: Optional[Any]
-        name=None,  # type: Optional[Text]
-        dtype=None  # type: Optional[int]
-):  # type: (...) -> OptionalProto
-    """Converts an optional value into a Optional def.
-
-    Inputs:
-        opt: a Python optional
-        name: (optional) the name of the optional.
-        dtype: (optional) type of element in the input, used for specifying
-                          optional values when converting empty none. dtype must
-                          be a valid OptionalProto.DataType value
-    Returns:
-        optional: the converted optional def.
-    """
-    # TODO: create a map and replace conditional branches
-    optional = OptionalProto()
-    if name:
-        optional.name = name
-
-    if dtype:
-        # dtype must be a valid OptionalProto.DataType
-        valid_dtypes = [v for v in OptionalProto.DataType.values()]
-        assert dtype in valid_dtypes
-        elem_type = dtype
-    elif isinstance(opt, dict):
-        elem_type = OptionalProto.MAP
-    elif isinstance(opt, list):
-        elem_type = OptionalProto.SEQUENCE
-    elif opt is None:
-        elem_type = OptionalProto.UNDEFINED
-    else:
-        elem_type = OptionalProto.TENSOR
-
-    optional.elem_type = elem_type
-
-    if opt is not None:
-        if elem_type == OptionalProto.TENSOR:
-            optional.tensor_value.CopyFrom(from_array(opt))
-        elif elem_type == OptionalProto.SEQUENCE:
-            optional.sequence_value.CopyFrom(from_list(opt))
-        elif elem_type == OptionalProto.MAP:
-            optional.map_value.CopyFrom(from_dict(opt))
-        else:
-            raise TypeError("The element type in the input is not a tensor, "
-                            "sequence, or map and is not supported.")
-    return optional
 
 
 def convert_endian(tensor):  # type: (TensorProto) -> None

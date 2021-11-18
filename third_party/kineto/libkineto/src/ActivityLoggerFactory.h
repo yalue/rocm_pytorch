@@ -8,7 +8,6 @@
 #pragma once
 
 #include <algorithm>
-#include <cctype>
 #include <fmt/format.h>
 #include <functional>
 #include <map>

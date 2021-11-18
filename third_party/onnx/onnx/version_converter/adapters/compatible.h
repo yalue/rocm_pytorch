@@ -15,9 +15,7 @@ struct CompatibleAdapter final : public Adapter {
   explicit CompatibleAdapter(const std::string& op_name, const OpSetID&
     initial, const OpSetID& target): Adapter(op_name, initial, target) {}
 
-  Node* adapt(std::shared_ptr<Graph>, Node* node) const override {
-    return node;
-  }
+  void adapt(std::shared_ptr<Graph>, Node*) const override {}
 };
 
 }} // namespace ONNX_NAMESPACE::version_conversion

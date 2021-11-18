@@ -31,7 +31,6 @@
 
 extern "C" {
   void suppressLibkinetoLogMessages();
-  int InitializeInjection(void);
   bool libkineto_init(bool cpuOnly, bool logOnError);
 }
 

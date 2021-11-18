@@ -79,9 +79,8 @@ struct Scan_9_8 final : public Adapter {
     }
   }
 
-  Node* adapt(std::shared_ptr<Graph> graph, Node* node) const override {
+  void adapt(std::shared_ptr<Graph> graph, Node* node) const override {
     adapt_scan_9_8(graph, node);
-    return node;
   }
 };
 

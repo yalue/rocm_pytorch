@@ -47,10 +47,8 @@ class BroadcastForwardCompatibility final : public Adapter {
               for (auto a : axes) {
                 data.emplace_back(a);
               }
-              Node* constant = graph->create(kConstant);
-              constant->insertBefore(node);
-              constant->t_(kvalue, t);        
-              node->addInput(constant->output());
+              Value* axes_value = graph->addInitializerAndInput(t);
+              n->addInput(axes_value);
             } else { // Unsqueeze takes 'axes' attribute
               n->is_(kaxes, std::forward<const std::vector<int64_t>>(axes));
             }
@@ -69,9 +67,8 @@ class BroadcastForwardCompatibility final : public Adapter {
       assert_numpy_multibroadcastable(inputs[0]->sizes(), inputs[1]->sizes());
     }
 
-    Node* adapt(std::shared_ptr<Graph> graph, Node* node) const override {
+    void adapt(std::shared_ptr<Graph> graph, Node* node) const override {
       adapt_broadcast_forward_compatibility(graph, node);
-      return node;
     }
 };
 

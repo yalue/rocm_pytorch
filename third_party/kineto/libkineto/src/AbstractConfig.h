@@ -78,9 +78,7 @@ class AbstractConfig {
   // Perform post-validation checks, typically conditons involving
   // multiple options.
   // Throw std::invalid_argument if automatic correction can not be made.
-  //
-  // @param fallbackProfileStartTime Specify a fallback profile start timestamp in case it was never specified by the client
-  virtual void validate(const std::chrono::time_point<std::chrono::system_clock>& fallbackProfileStartTime) = 0;
+  virtual void validate() = 0;
 
   // TODO: Separate out each profiler type into features?
   virtual void printActivityProfilerConfig(std::ostream& s) const;

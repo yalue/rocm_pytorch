@@ -1,11 +1,10 @@
 # -------------------------------------------------------------------------
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # -------------------------------------------------------------------------
+import multiprocessing as mp
 import os
 
 from .. import utils
-from ..profiler import multiprocessing as mp
-from . import file
 from .file import download_file, read
 
 logger = utils.get_logger()
@@ -27,7 +26,7 @@ class Cache:
         if hasattr(self, '_manager'):
             del data['_manager']
         logger.debug("Cache.__getstate__: %s " % data)
-        return data, file._REGISTERED_FILESYSTEMS
+        return data
 
     def __setstate__(self, state):
         '''The default logging level in new process is warning. Only warning and error log can be written to 
@@ -36,9 +35,8 @@ class Cache:
         '''
         from absl import logging
         logging.use_absl_handler()
-        logger.debug("Cache.__setstate__ %s " % (state,))
-        data, file._REGISTERED_FILESYSTEMS = state
-        self.__dict__.update(data)
+        logger.debug("Cache.__setstate__ %s " % state)
+        self.__dict__.update(state)
 
     def read(self, filename):
         local_file = self.get_remote_cache(filename)

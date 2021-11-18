@@ -1,19 +1,12 @@
 import json
 import os
-import random
-import shutil
 import socket
-import tempfile
 import time
 import unittest
 import urllib
 import urllib.request
 from subprocess import Popen
 from urllib.error import HTTPError
-
-
-def get_samples_dir():
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), '../samples')
 
 
 class TestEnd2End(unittest.TestCase):
@@ -24,45 +17,27 @@ class TestEnd2End(unittest.TestCase):
     #    self._test_tensorboard_with_arguments(test_folder, expected_runs, {'TORCH_PROFILER_START_METHOD':'spawn'})
 
     def test_tensorboard_end2end(self):
-        test_folder = get_samples_dir()
+        test_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)),'../samples')
         expected_runs = b'["resnet50_num_workers_0", "resnet50_num_workers_4"]'
-
+        
         print("starting spawn mode testing...")
         self._test_tensorboard_with_arguments(test_folder, expected_runs, {'TORCH_PROFILER_START_METHOD':'spawn'})
 
-    @unittest.skip("fork is not use anymore")
     def test_tensorboard_fork(self):
-        test_folder = get_samples_dir()
+        test_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)),'../samples')
         expected_runs = b'["resnet50_num_workers_0", "resnet50_num_workers_4"]'
 
         print("starting fork mode testing")
         self._test_tensorboard_with_arguments(test_folder, expected_runs)
 
     def test_tensorboard_with_path_prefix(self):
-        test_folder = get_samples_dir()
+        test_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)),'../samples')
         expected_runs = b'["resnet50_num_workers_0", "resnet50_num_workers_4"]'
         self._test_tensorboard_with_arguments(test_folder, expected_runs, path_prefix='/tensorboard/viewer/')
 
-    def test_tensorboard_with_symlinks(self):
-        logdir = tempfile.mkdtemp(prefix="tensorboard_logdir")
-
-        samples_dir = get_samples_dir()
-
-        # Create the following layout, with 1 symlink to a run dir, and 1 regular run dir:
-        # logdir/
-        #     run_concrete/
-        #     run_symlink/ --> path/to/samples/resnet50_num_workers_4/
-        shutil.copytree(os.path.join(samples_dir, "resnet50_num_workers_0"), os.path.join(logdir, "run_concrete"))
-        os.symlink(os.path.join(samples_dir, "resnet50_num_workers_4"), os.path.join(logdir, "run_symlink"))
-
-        expected_runs = b'["run_concrete", "run_symlink"]'
-        self._test_tensorboard_with_arguments(logdir, expected_runs)
-
-        shutil.rmtree(logdir)
-
     def _test_tensorboard_with_arguments(self, test_folder, expected_runs, env=None, path_prefix=None):
         host='localhost'
-        port=random.randint(6008, 65535)
+        port=7007
 
         try:
             if env:
@@ -114,14 +89,7 @@ class TestEnd2End(unittest.TestCase):
             try:
                 response = urllib.request.urlopen(run_link)
                 data = response.read()
-                runs = None
-                if data:
-                    data = json.loads(data)
-                    runs = data.get("runs")
-                    if runs:
-                        runs = '[{}]'.format(", ".join(['"{}"'.format(i) for i in runs]))
-                        runs = runs.encode('utf-8')
-                if runs == expected_runs:
+                if data == expected_runs:
                     break
                 if retry_times % 10 == 0:
                     print("receive mismatched data, retrying", data)
@@ -140,29 +108,17 @@ class TestEnd2End(unittest.TestCase):
             for expected_link in expected_links_format:
                 links.append(expected_link.format(run))
 
-        if os.environ.get("TORCH_PROFILER_REGEN_RESULT_CHECK") == "1":
-            with open('result_check_file.txt', 'w', encoding="utf-8") as f:
-                # NOTE: result_check_file.txt is manually generated and verified.
-                # And then checked-in so that we can make sure that frontend 
-                # content change can be detected on code change.
-                for link in links:
+        with open('result_check_file.txt', 'r') as f:
+            lines=f.readlines()
+            i = 0
+            print("starting testing...")
+            for link in links:
+                try:
                     response = urllib.request.urlopen(link)
-                    f.write(response.read().decode('utf-8'))
-                    f.write("\n")
-        else:
-            with open('result_check_file.txt', 'r') as f:
-                lines=f.readlines()
-                i = 0
-                print("starting testing...")
-                for link in links:
-                    try:
-                        response = urllib.request.urlopen(link)
-                        self.assertEqual(response.read(), lines[i].strip().encode(encoding="utf-8"))
-                        i = i + 1
-                    except HTTPError as e:
-                        self.fail(e)
-            self.assertEqual(i, 10)
-            print("ending testing...")
+                    self.assertEqual(response.read(), lines[i].strip().encode(encoding="utf-8"))
+                    i = i + 1
+                except HTTPError as e:
+                    self.fail(e)
+        self.assertEqual(i, 10)
+        print("ending testing...")
 
-if __name__ == '__main__':
-    unittest.main()

@@ -168,23 +168,8 @@ void Reactor::unregisterQp(uint32_t qpn) {
   queuePairEventHandler_.erase(qpn);
 }
 
-void Reactor::postWrite(IbvQueuePair& qp, WriteInfo info) {
+void Reactor::postWrite(IbvQueuePair& qp, IbvLib::send_wr& wr) {
   if (numAvailableWrites_ > 0) {
-    IbvLib::sge list;
-    list.addr = reinterpret_cast<uint64_t>(info.addr);
-    list.length = info.length;
-    list.lkey = info.lkey;
-
-    IbvLib::send_wr wr;
-    std::memset(&wr, 0, sizeof(wr));
-    wr.wr_id = kWriteRequestId;
-    wr.sg_list = &list;
-    wr.num_sge = 1;
-    wr.opcode = IbvLib::WR_RDMA_WRITE_WITH_IMM;
-    wr.imm_data = info.length;
-    wr.wr.rdma.remote_addr = info.remoteAddr;
-    wr.wr.rdma.rkey = info.rkey;
-
     IbvLib::send_wr* badWr = nullptr;
     TP_VLOG(9) << "Transport context " << id_ << " posting RDMA write for QP "
                << qp->qp_num;
@@ -194,18 +179,12 @@ void Reactor::postWrite(IbvQueuePair& qp, WriteInfo info) {
   } else {
     TP_VLOG(9) << "Transport context " << id_
                << " queueing up RDMA write for QP " << qp->qp_num;
-    pendingQpWrites_.emplace_back(qp, info);
+    pendingQpWrites_.emplace_back(qp, wr);
   }
 }
 
-void Reactor::postAck(IbvQueuePair& qp, AckInfo info) {
+void Reactor::postAck(IbvQueuePair& qp, IbvLib::send_wr& wr) {
   if (numAvailableAcks_ > 0) {
-    IbvLib::send_wr wr;
-    std::memset(&wr, 0, sizeof(wr));
-    wr.wr_id = kAckRequestId;
-    wr.opcode = IbvLib::WR_SEND_WITH_IMM;
-    wr.imm_data = info.length;
-
     IbvLib::send_wr* badWr = nullptr;
     TP_VLOG(9) << "Transport context " << id_ << " posting send for QP "
                << qp->qp_num;
@@ -215,7 +194,7 @@ void Reactor::postAck(IbvQueuePair& qp, AckInfo info) {
   } else {
     TP_VLOG(9) << "Transport context " << id_ << " queueing send for QP "
                << qp->qp_num;
-    pendingQpAcks_.emplace_back(qp, info);
+    pendingQpAcks_.emplace_back(qp, wr);
   }
 }
 

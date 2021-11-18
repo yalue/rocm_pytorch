@@ -8,23 +8,12 @@
 {% set wdesc =  "weighted" if weighted else "unweighted" %}
 
 #include <ATen/ATen.h>
-#ifdef FBGEMM_GPU_WITH_CUDA
-#include <ATen/cuda/CUDAContext.h>
-#endif
 
 #include <immintrin.h>
 #include <emmintrin.h>
 
 namespace {
 enum PoolingMode { SUM = 0, MEAN = 1, NONE = 2 };
-
-// Keep in sync with EmbeddingLocation in split_table_batched_embeddings_ops.py
-enum {
-  DEVICE = 0,
-  MANAGED = 1,
-  MANAGED_CACHING = 2,
-  HOST = 3,
-};
 
 using namespace at;
 
@@ -62,7 +51,6 @@ enum class SparseType : uint8_t {
 };
 
 inline int32_t unpadded_row_size_in_bytes(int32_t dim, SparseType weight_ty) {
-    if (weight_ty == SparseType::FP32) { return dim * 4; }
     if (weight_ty == SparseType::FP16) { return dim * 2; }
     if (weight_ty == SparseType::INT8) { return dim + 4; }
     if (weight_ty == SparseType::INT4) { return dim / 2 + 4; }
@@ -83,15 +71,16 @@ inline int32_t padded_row_size_in_bytes(int32_t dim, SparseType weight_ty) {
   return round_up(r, 16);
 }
 
+#define BIG_CONSTANT(x) (x##LLU)
 
-inline uint32_t pruned_hash_function(uint32_t h) {
-    // MurmorHash3 32-bit mixing function.
-    h ^= h >> 16;
-    h *= 0x85ebca6b;
-    h ^= h >> 13;
-    h *= 0xc2b2ae35;
-    h ^= h >> 16;
-    return h;
+inline uint32_t pruned_hash_function(int32_t key, int32_t table) {
+    uint64_t k = (static_cast<uint64_t>(key) << 32) | static_cast<uint64_t>(table);
+    k ^= k >> 33;
+    k *= BIG_CONSTANT(0xff51afd7ed558ccd);
+    k ^= k >> 33;
+    k *= BIG_CONSTANT(0xc4ceb9fe1a85ec53);
+    k ^= k >> 33;
+    return static_cast<uint32_t>(k >> 32);
 }
 
 }
@@ -101,8 +90,8 @@ void pruned_hashmap_insert_{{ wdesc }}_cpu(
     Tensor dense_indices,
     Tensor offsets,
     Tensor hash_table,
-    Tensor hash_table_offsets) {
-    int32_t T = hash_table_offsets.size(0) - 1;
+    int64_t T) {
+
     int32_t B = (offsets.size(0) - 1) / T;
     TORCH_CHECK(B > 0);
     const auto* indices_acc = indices.data_ptr<int32_t>();
@@ -110,16 +99,8 @@ void pruned_hashmap_insert_{{ wdesc }}_cpu(
 
     const auto* offsets_acc = offsets.data_ptr<int32_t>();
     auto hash_table_acc = hash_table.accessor<int32_t, 2>();
-    const auto hash_table_offsets_acc = hash_table_offsets.accessor<int64_t, 1>();
-
-
+    uint32_t capacity = hash_table.size(0);
     for (int32_t t = 0; t < T; ++t) {
-        int64_t table_start = hash_table_offsets_acc[t];
-        int64_t table_end = hash_table_offsets_acc[t + 1];
-        if (table_start == table_end) {
-            continue;
-        }
-        int64_t capacity = table_end - table_start;
         for (int32_t b = 0; b < B; ++b) {
             int32_t indices_start = offsets_acc[t * B + b];
             int32_t indices_end = offsets_acc[t * B + b + 1];
@@ -127,23 +108,22 @@ void pruned_hashmap_insert_{{ wdesc }}_cpu(
             for (int32_t l = 0; l < L; ++l) {
                 int32_t idx = indices_acc[indices_start + l];
                 int32_t dense_idx = dense_indices_acc[indices_start + l];
-                if (dense_idx == -1) {
-                    // -1 means this row has been pruned, do not insert it.
-                    continue;
-                }
 
-                uint32_t slot = pruned_hash_function(static_cast<uint32_t>(idx)) % capacity;
+                uint32_t slot = static_cast<uint32_t>(pruned_hash_function(idx, t)) % capacity;
                 while (true) {
-                    int32_t slot_sparse_idx = hash_table_acc[table_start + static_cast<int64_t>(slot)][0];
+                    int32_t sidx = hash_table_acc[slot][0];
+                    int32_t stable = hash_table_acc[slot][1];
+
                     // empty slot
-                    if (slot_sparse_idx == -1) {
-                        hash_table_acc[table_start + static_cast<int64_t>(slot)][0] = idx;
-                        hash_table_acc[table_start + static_cast<int64_t>(slot)][1] = dense_idx;
+                    if (sidx == -1) {
+                        hash_table_acc[slot][0] = idx;
+                        hash_table_acc[slot][1] = t;
+                        hash_table_acc[slot][2] = dense_idx;
                         break;
                     }
                     // already exists (shouldn't happen in practice)
-                    if (slot_sparse_idx == idx) {
-                        hash_table_acc[table_start + static_cast<int64_t>(slot)][1] = dense_idx;
+                    if (sidx == idx && stable == t) {
+                        hash_table_acc[slot][2] = dense_idx;
                         break;
                     }
                     // linear probe
@@ -157,8 +137,6 @@ void pruned_hashmap_insert_{{ wdesc }}_cpu(
 
 Tensor int_nbit_split_embedding_codegen_forward_{{ wdesc }}_cpu(
     Tensor dev_weights,
-    Tensor uvm_weights,
-    Tensor weights_placements,
     Tensor weights_offsets,
     Tensor weights_tys,
     Tensor D_offsets,
@@ -177,27 +155,16 @@ Tensor int_nbit_split_embedding_codegen_forward_{{ wdesc }}_cpu(
     int32_t B = (offsets.size(0) - 1) / T;
     TORCH_CHECK(B > 0);
     TORCH_CHECK(total_D > 0);
-    bool pined_memory = false;
-#ifdef FBGEMM_GPU_WITH_CUDA
-    if (globalContext().hasCUDA() && ::at::cuda::is_available()) {
-      pined_memory = true;
-    }
-#endif
-
-    auto output = empty({B, total_D}, dev_weights.options().dtype(at::kHalf).pinned_memory(pined_memory));
-
-    const int32_t* weights_placements_ptr = weights_placements.data_ptr<int32_t>();
-    const uint8_t* weights_acc;
-
+    auto output = empty({B, total_D}, dev_weights.options().dtype(at::kHalf).pinned_memory(true));
+    const auto* weights_acc = dev_weights.data_ptr<uint8_t>();
     const auto* weights_tys_acc = weights_tys.data_ptr<uint8_t>();
 
     auto* output_acc = output.data_ptr<Half>();
     {% if weighted %}
     const float* indice_weights_acc = indice_weights.data_ptr<float>();
     {% endif %}
-    // Empty array filled with zeros (thus accumulating to zero).
-    // max-D = 1024, max-sizeof(T) = sizeof(float) = 4.
-    alignas(32) static constexpr std::array<uint8_t, 1024 * 4> zero_row = {0};
+    // Empty vector filled with zeros (thus accumulating to zero).
+    static std::vector<uint8_t> zero_row(1024 * 8, 0);
     std::vector<__m256> acc; //, {{ kMaxVecsPerThread }} > acc;
 
     AT_DISPATCH_INDEX_TYPES(indices.scalar_type(), "int_nbit_split_embedding_codegen_forward_", [&] () {
@@ -211,13 +178,6 @@ Tensor int_nbit_split_embedding_codegen_forward_{{ wdesc }}_cpu(
         for (int32_t t = 0; t < T; ++t) {
             const int32_t D_start = D_offsets_acc[t];
             const int32_t D = D_offsets_acc[t+1] - D_offsets_acc[t];
-            const auto placement = weights_placements_ptr[t];
-            assert(placement != DEVICE);
-            if (placement == HOST) {
-                weights_acc = dev_weights.data_ptr<uint8_t>();
-            } else {
-                weights_acc = uvm_weights.data_ptr<uint8_t>();
-            }
             const uint8_t* weights = &weights_acc[weights_offsets_acc[t]];
             auto weight_ty = static_cast<SparseType>(weights_tys_acc[t]);
             const int32_t D_vecs = div_round_up(D, 8);
@@ -277,55 +237,6 @@ Tensor int_nbit_split_embedding_codegen_forward_{{ wdesc }}_cpu(
                             acc[i] = _mm256_fmadd_ps(scale, _mm256_cvtph_ps(row[i]), acc[i]);
                             {% else %}
                             acc[i] = _mm256_add_ps(_mm256_cvtph_ps(row[i]), acc[i]);
-                            {% endif %}
-                        }
-                    }
-
-                    const bool acc_scaling = (pooling_mode == MEAN && L > 0);
-                    const float acc_scale_factor = acc_scaling ? 1.0 / L : 1.0;
-                    __m256 scale_vec = _mm256_set1_ps(acc_scale_factor);
-                    if (D_tail_elements == 0) {
-                        for (auto i = 0; i < D_vecs; ++i) {
-                            auto acci = acc_scaling ? _mm256_mul_ps(acc[i], scale_vec) : acc[i];
-                            _mm_storeu_si128(reinterpret_cast<__m128i*>(&output_acc[b * total_D + D_start + 8 * i]), _mm256_cvtps_ph(acci, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC));
-                        }
-                    } else {
-                        for (auto i = 0; i < D_vecs - 1; ++i) {
-                            auto acci = acc_scaling ? _mm256_mul_ps(acc[i], scale_vec) : acc[i];
-                            _mm_storeu_si128(reinterpret_cast<__m128i*>(&output_acc[b * total_D + D_start + 8 * i]), _mm256_cvtps_ph(acci, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC));
-                        }
-                        std::array<Half, 8> vs;
-                        auto acci = acc_scaling ? _mm256_mul_ps(acc[D_vecs - 1], scale_vec) : acc[D_vecs - 1];
-                        _mm_storeu_si128(reinterpret_cast<__m128i*>(vs.data()), _mm256_cvtps_ph(acci, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC));
-                        std::copy(vs.data(), vs.data() + D_tail_elements, &output_acc[b * total_D + D_start + 8 * (D_vecs - 1)]);
-                    }
-                }
-            } else if (weight_ty == SparseType::FP32) {
-                for (int32_t b = 0; b < B; ++b) {
-                    int32_t indices_start = offsets_acc[t * B + b];
-                    int32_t indices_end = offsets_acc[t * B + b + 1];
-                    int32_t L = indices_end - indices_start;
-                    acc.resize(D_vecs);
-                    for (auto i = 0; i < D_vecs; ++i) {
-                        acc[i] = _mm256_setzero_ps();
-                    }
-                    for (int32_t l = 0; l < L; ++l) {
-                        int64_t idx = indices_acc[indices_start + l];
-                        const __m256* row = idx == -1 ? reinterpret_cast<const __m256*>(zero_row.data()) : reinterpret_cast<const __m256*>(&weights[idx * D_bytes]);
-
-                        int64_t prefetch_idx = indices_acc[std::min<int32_t>(indices_start + l + 1, num_indices_m_1)];
-                        _mm_prefetch(&weights[prefetch_idx * D_bytes], _MM_HINT_T0);
-
-                        {% if weighted %}
-                        auto scale = _mm256_set1_ps(indice_weights_acc[indices_start + l]);
-                        {% endif %}
-
-                        for (auto i = 0; i < D_vecs; ++i) {
-                            // Note that we don't guarantee 32-byte alignment for row starts (just 16-byte), and therefore use unaligned loads.
-                            {% if weighted %}
-                            acc[i] = _mm256_fmadd_ps(scale, _mm256_loadu_ps(reinterpret_cast<const float*>(&row[i])), acc[i]);
-                            {% else %}
-                            acc[i] = _mm256_add_ps(_mm256_loadu_ps(reinterpret_cast<const float*>(&row[i])), acc[i]);
                             {% endif %}
                         }
                     }
@@ -544,8 +455,8 @@ Tensor pruned_hashmap_lookup_{{ wdesc }}_cpu(
     Tensor indices,
     Tensor offsets,
     Tensor hash_table,
-    Tensor hash_table_offsets) {
-    int32_t T = hash_table_offsets.size(0) - 1;
+    int64_t T) {
+
     int32_t B = (offsets.size(0) - 1) / T;
     TORCH_CHECK(B > 0);
     auto dense_indices = empty_like(indices);
@@ -554,77 +465,35 @@ Tensor pruned_hashmap_lookup_{{ wdesc }}_cpu(
 
     const auto* offsets_acc = offsets.data_ptr<int32_t>();
     const auto hash_table_acc = hash_table.accessor<int32_t, 2>();
-    const auto hash_table_offsets_acc = hash_table_offsets.accessor<int64_t, 1>();
-
+    int32_t capacity = hash_table.size(0);
     for (int32_t t = 0; t < T; ++t) {
-        int64_t table_start = hash_table_offsets_acc[t];
-        int64_t table_end = hash_table_offsets_acc[t + 1];
-        int64_t capacity = table_end - table_start;
-
         for (int32_t b = 0; b < B; ++b) {
             int32_t indices_start = offsets_acc[t * B + b];
             int32_t indices_end = offsets_acc[t * B + b + 1];
             int32_t L = indices_end - indices_start;
+            for (int32_t l = 0; l < L; ++l) {
+                int32_t idx = indices_acc[indices_start + l];
 
-            if (table_start == table_end) {
-                for (int32_t l = 0; l < L; ++l) {
-                    dense_indices_acc[indices_start + l] = indices_acc[indices_start + l];
-                }
-            } else {
-                for (int32_t l = 0; l < L; ++l) {
-                    int32_t idx = indices_acc[indices_start + l];
-                    uint32_t slot = pruned_hash_function(static_cast<uint32_t>(idx)) % capacity;
-                    while (true) {
-                        int32_t slot_sparse_idx = hash_table_acc[table_start + static_cast<int64_t>(slot)][0];
+                uint32_t slot = static_cast<uint32_t>(pruned_hash_function(idx, t)) % capacity;
+                while (true) {
+                    int32_t sidx = hash_table_acc[slot][0];
+                    int32_t stable = hash_table_acc[slot][1];
 
-                        // empty slot
-                        if (slot_sparse_idx == -1) {
-                            dense_indices_acc[indices_start + l] = -1;
-                            break;
-                        }
-                        // already exists
-                        if (slot_sparse_idx == idx) {
-                            dense_indices_acc[indices_start + l] = hash_table_acc[table_start + static_cast<int64_t>(slot)][1];
-                            break;
-                        }
-                        // linear probe
-                        slot = (slot + 1) % capacity;
+                    // empty slot
+                    if (sidx == -1) {
+                        dense_indices_acc[indices_start + l] = -1;
+                        break;
                     }
+                    // already exists
+                    if (sidx == idx && stable == t) {
+                        dense_indices_acc[indices_start + l] = hash_table_acc[slot][2];
+                        break;
+                    }
+                    // linear probe
+                    slot = (slot + 1) % capacity;
                 }
             }
         }
     }
     return dense_indices;
 }
-
-{% if not weighted %}
-Tensor pruned_array_lookup_cpu(
-    Tensor indices,
-    Tensor offsets,
-    Tensor index_remappings,
-    Tensor index_remappings_offsets) {
-    int32_t T = index_remappings_offsets.size(0) - 1;
-    int32_t B = (offsets.size(0) - 1) / T;
-    TORCH_CHECK(B > 0);
-    auto dense_indices = empty_like(indices);
-    const auto* indices_acc = indices.data_ptr<int32_t>();
-    auto* dense_indices_acc = dense_indices.data_ptr<int32_t>();
-    const auto* offsets_acc = offsets.data_ptr<int32_t>();
-
-    const auto index_remappings_acc = index_remappings.data_ptr<int32_t>();
-    const auto index_remappings_offsets_acc = index_remappings_offsets.data_ptr<int64_t>();
-
-    for (int32_t t = 0; t < T; ++t) {
-        int64_t index_remappings_start = index_remappings_offsets_acc[t];
-        int64_t index_remappings_end = index_remappings_offsets_acc[t + 1];
-        int64_t capacity = index_remappings_end - index_remappings_start;
-        int32_t indices_start = offsets_acc[t * B];
-        int32_t indices_end = offsets_acc[(t + 1) * B];
-        for (int32_t i = indices_start; i < indices_end; ++i) {
-            int32_t idx = indices_acc[i];
-            dense_indices[i] = capacity ? index_remappings_acc[index_remappings_start + idx] : idx;
-        }
-    }
-    return dense_indices;
-}
-{% endif %}

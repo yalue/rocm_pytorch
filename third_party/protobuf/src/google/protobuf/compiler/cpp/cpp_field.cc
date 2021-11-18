@@ -73,7 +73,7 @@ void SetCommonFieldVariables(const FieldDescriptor* descriptor,
 
   (*variables)["set_hasbit"] = "";
   (*variables)["clear_hasbit"] = "";
-  if (HasHasbit(descriptor)) {
+  if (HasFieldPresence(descriptor->file())) {
     (*variables)["set_hasbit_io"] =
         "_Internal::set_has_" + FieldName(descriptor) + "(&_has_bits_);";
   } else {
@@ -90,8 +90,7 @@ void SetCommonFieldVariables(const FieldDescriptor* descriptor,
 }
 
 void FieldGenerator::SetHasBitIndex(int32 has_bit_index) {
-  if (!HasHasbit(descriptor_)) {
-    GOOGLE_CHECK_EQ(has_bit_index, -1);
+  if (!HasFieldPresence(descriptor_->file()) || has_bit_index == -1) {
     return;
   }
   variables_["set_hasbit"] = StrCat(
@@ -156,7 +155,7 @@ FieldGenerator* FieldGeneratorMap::MakeGenerator(
       default:
         return new RepeatedPrimitiveFieldGenerator(field, options);
     }
-  } else if (field->real_containing_oneof()) {
+  } else if (field->containing_oneof()) {
     switch (field->cpp_type()) {
       case FieldDescriptor::CPPTYPE_MESSAGE:
         return new MessageOneofFieldGenerator(field, options, scc_analyzer);

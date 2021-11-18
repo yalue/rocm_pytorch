@@ -116,7 +116,7 @@ class PROTOBUF_EXPORT ProtoStreamObjectWriter : public ProtoWriter {
     }
   };
 
-  // Constructor. Does not take ownership of any parameter passed in.
+// Constructor. Does not take ownership of any parameter passed in.
   ProtoStreamObjectWriter(TypeResolver* type_resolver,
                           const google::protobuf::Type& type,
                           strings::ByteSink* output, ErrorListener* listener,
@@ -241,7 +241,7 @@ class PROTOBUF_EXPORT ProtoStreamObjectWriter : public ProtoWriter {
     int depth_;
 
     // True if the type is a well-known type. Well-known types in Any
-    // has a special formatting:
+    // has a special formating:
     // {
     //   "@type": "type.googleapis.com/google.protobuf.XXX",
     //   "value": <JSON representation of the type>,
@@ -347,24 +347,24 @@ class PROTOBUF_EXPORT ProtoStreamObjectWriter : public ProtoWriter {
   // Renders google.protobuf.Value in struct.proto. It picks the right oneof
   // type based on value's type.
   static util::Status RenderStructValue(ProtoStreamObjectWriter* ow,
-                                          const DataPiece& data);
+                                          const DataPiece& value);
 
   // Renders google.protobuf.Timestamp value.
   static util::Status RenderTimestamp(ProtoStreamObjectWriter* ow,
-                                        const DataPiece& data);
+                                        const DataPiece& value);
 
   // Renders google.protobuf.FieldMask value.
   static util::Status RenderFieldMask(ProtoStreamObjectWriter* ow,
-                                        const DataPiece& data);
+                                        const DataPiece& value);
 
   // Renders google.protobuf.Duration value.
   static util::Status RenderDuration(ProtoStreamObjectWriter* ow,
-                                       const DataPiece& data);
+                                       const DataPiece& value);
 
   // Renders wrapper message types for primitive types in
   // google/protobuf/wrappers.proto.
   static util::Status RenderWrapperType(ProtoStreamObjectWriter* ow,
-                                          const DataPiece& data);
+                                          const DataPiece& value);
 
   static void InitRendererMap();
   static void DeleteRendererMap();
@@ -382,11 +382,10 @@ class PROTOBUF_EXPORT ProtoStreamObjectWriter : public ProtoWriter {
   // on the underlying ObjectWriter depending on whether is_list is false or
   // not.
   // is_placeholder conveys whether the item is a placeholder item or not.
-  // Placeholder items are pushed when adding auxiliary types' StartObject or
+  // Placeholder items are pushed when adding auxillary types' StartObject or
   // StartList calls.
   void Push(StringPiece name, Item::ItemType item_type,
             bool is_placeholder, bool is_list);
-
 
   // Pops items from the stack. All placeholder items are popped until a
   // non-placeholder item is found.

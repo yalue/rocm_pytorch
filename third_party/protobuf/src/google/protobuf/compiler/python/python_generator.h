@@ -69,11 +69,10 @@ class PROTOC_EXPORT Generator : public CodeGenerator {
   virtual ~Generator();
 
   // CodeGenerator methods.
-  bool Generate(const FileDescriptor* file, const std::string& parameter,
-                GeneratorContext* generator_context,
-                std::string* error) const override;
-
-  uint64_t GetSupportedFeatures() const override;
+  virtual bool Generate(const FileDescriptor* file,
+                        const std::string& parameter,
+                        GeneratorContext* generator_context,
+                        std::string* error) const;
 
  private:
   void PrintImports() const;

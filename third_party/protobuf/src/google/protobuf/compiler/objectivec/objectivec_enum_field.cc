@@ -104,13 +104,13 @@ void EnumFieldGenerator::GenerateCFunctionImplementations(
       "int32_t $owning_message_class$_$capitalized_name$_RawValue($owning_message_class$ *message) {\n"
       "  GPBDescriptor *descriptor = [$owning_message_class$ descriptor];\n"
       "  GPBFieldDescriptor *field = [descriptor fieldWithNumber:$field_number_name$];\n"
-      "  return GPBGetMessageRawEnumField(message, field);\n"
+      "  return GPBGetMessageInt32Field(message, field);\n"
       "}\n"
       "\n"
       "void Set$owning_message_class$_$capitalized_name$_RawValue($owning_message_class$ *message, int32_t value) {\n"
       "  GPBDescriptor *descriptor = [$owning_message_class$ descriptor];\n"
       "  GPBFieldDescriptor *field = [descriptor fieldWithNumber:$field_number_name$];\n"
-      "  GPBSetMessageRawEnumField(message, field, value);\n"
+      "  GPBSetInt32IvarWithFieldInternal(message, field, value, descriptor.file.syntax);\n"
       "}\n"
       "\n");
 }

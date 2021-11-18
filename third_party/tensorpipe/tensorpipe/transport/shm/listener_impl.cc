@@ -62,14 +62,6 @@ void ListenerImpl::initImplFromLoop() {
     setError(std::move(error));
     return;
   }
-  struct sockaddr_storage addr;
-  socklen_t addrlen;
-  std::tie(error, addr, addrlen) = socket_.getSockName();
-  if (error) {
-    setError(std::move(error));
-    return;
-  }
-  sockaddr_ = Sockaddr(reinterpret_cast<struct sockaddr*>(&addr), addrlen);
 }
 
 void ListenerImpl::handleErrorImpl() {
@@ -97,6 +89,7 @@ void ListenerImpl::acceptImplFromLoop(accept_callback_fn fn) {
 }
 
 std::string ListenerImpl::addrImplFromLoop() const {
+  TP_DCHECK(context_->inLoop());
   return sockaddr_.str();
 }
 

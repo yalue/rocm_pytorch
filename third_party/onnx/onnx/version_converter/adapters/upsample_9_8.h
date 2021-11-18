@@ -6,8 +6,6 @@
 
 #pragma once
 
-#include "onnx/defs/tensor_proto_util.h"
-#include "onnx/defs/tensor_util.h"
 #include "onnx/version_converter/adapters/adapter.h"
 
 namespace ONNX_NAMESPACE { namespace version_conversion {
@@ -28,7 +26,14 @@ struct Upsample_9_8 final : public Adapter {
       {
           if(initializers[i].name() == inputs[1]->uniqueName())
           {
-            std::vector<float> value = ParseData<float>(&initializers[i]);
+            std::vector<float> value = initializers[i].floats();
+            if (initializers[i].is_raw_data()){
+              const std::string& bytes = initializers[i].raw();
+              value.insert(
+                  value.end(),
+                  reinterpret_cast<const float*>(bytes.c_str()),
+                  reinterpret_cast<const float*>(bytes.c_str() + bytes.size()));
+            }
             std::vector<double> d_values;
             d_values.reserve(value.size());
             for (size_t j = 0; j < value.size(); j++)
@@ -55,7 +60,14 @@ struct Upsample_9_8 final : public Adapter {
       {
         if (op->kind() == kConstant && op->outputs()[0]->uniqueName() == scale_input_name)
         {
-          std::vector<float> value = ParseData<float>(&op->t(kvalue));
+          std::vector<float> value = op->t(kvalue).floats();
+          if (op->t(kvalue).is_raw_data()){
+            const std::string& bytes = op->t(kvalue).raw();
+            value.insert(
+                value.end(),
+                reinterpret_cast<const float*>(bytes.c_str()),
+                reinterpret_cast<const float*>(bytes.c_str() + bytes.size()));
+          }
           std::vector<double> d_values;
           d_values.reserve(value.size());
           for (size_t j = 0; j < value.size(); j++)
@@ -72,9 +84,8 @@ struct Upsample_9_8 final : public Adapter {
       ONNX_ASSERTM(false, "Unsuppported conversion due to unavailable input: scale");
   }
 
-  Node* adapt(std::shared_ptr<Graph> graph, Node* node) const override {
+  void adapt(std::shared_ptr<Graph> graph, Node* node) const override {
     adapt_upsample_9_8(graph, node);
-    return node;
   }
 };
 

@@ -79,21 +79,9 @@ class Reactor final : public BusyPollingLoop {
 
   void unregisterQp(uint32_t qpn);
 
-  struct WriteInfo {
-    void* addr;
-    size_t length;
-    uint32_t lkey;
-    uint64_t remoteAddr;
-    uint32_t rkey;
-  };
+  void postWrite(IbvQueuePair& qp, IbvLib::send_wr& wr);
 
-  void postWrite(IbvQueuePair& qp, WriteInfo info);
-
-  struct AckInfo {
-    size_t length;
-  };
-
-  void postAck(IbvQueuePair& qp, AckInfo info);
+  void postAck(IbvQueuePair& qp, IbvLib::send_wr& wr);
 
   void setId(std::string id);
 
@@ -133,8 +121,8 @@ class Reactor final : public BusyPollingLoop {
 
   uint32_t numAvailableWrites_{kNumPendingWriteReqs};
   uint32_t numAvailableAcks_{kNumPendingAckReqs};
-  std::deque<std::tuple<IbvQueuePair&, WriteInfo>> pendingQpWrites_;
-  std::deque<std::tuple<IbvQueuePair&, AckInfo>> pendingQpAcks_;
+  std::deque<std::tuple<IbvQueuePair&, IbvLib::send_wr>> pendingQpWrites_;
+  std::deque<std::tuple<IbvQueuePair&, IbvLib::send_wr>> pendingQpAcks_;
 };
 
 } // namespace ibv

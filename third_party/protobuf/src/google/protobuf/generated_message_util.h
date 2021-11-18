@@ -67,7 +67,6 @@ namespace google {
 namespace protobuf {
 
 class Arena;
-class Message;
 
 namespace io {
 class CodedInputStream;
@@ -150,8 +149,6 @@ PROTOBUF_EXPORT MessageLite* GetOwnedMessageInternal(Arena* message_arena,
                                                      MessageLite* submessage,
                                                      Arena* submessage_arena);
 PROTOBUF_EXPORT void GenericSwap(MessageLite* m1, MessageLite* m2);
-// We specialize GenericSwap for non-lite messages to benefit from reflection.
-PROTOBUF_EXPORT void GenericSwap(Message* m1, Message* m2);
 
 template <typename T>
 T* DuplicateIfNonNull(T* message) {
@@ -193,7 +190,7 @@ struct PROTOBUF_EXPORT SCCInfoBase {
     kUninitialized = -1,  // initial state
   };
 #if defined(_MSC_VER) && !defined(__clang__)
-  // MSVC doesn't make std::atomic constant initialized. This union trick
+  // MSVC doesnt make std::atomic constant initialized. This union trick
   // makes it so.
   union {
     int visit_status_to_make_linker_init;

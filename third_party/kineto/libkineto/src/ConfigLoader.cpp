@@ -13,7 +13,6 @@
 
 #include <stdlib.h>
 #include <chrono>
-#include <fmt/format.h>
 #include <fstream>
 
 #include "DaemonConfigLoader.h"
@@ -27,13 +26,13 @@ namespace KINETO_NAMESPACE {
 
 using namespace libkineto;
 
-constexpr char kConfigFileEnvVar[] = "KINETO_CONFIG";
+const string kConfigFileEnvVar = "KINETO_CONFIG";
 #ifdef __linux__
-constexpr char kConfigFile[] = "/etc/libkineto.conf";
-constexpr char kOnDemandConfigFile[] = "/tmp/libkineto.conf";
+const string kConfigFile = "/etc/libkineto.conf";
+const string kOnDemandConfigFile = "/tmp/libkineto.conf";
 #else
-constexpr char kConfigFile[] = "libkineto.conf";
-constexpr char kOnDemandConfigFile[] = "libkineto.conf";
+const string kConfigFile = "libkineto.conf";
+const string kOnDemandConfigFile = "libkineto.conf";
 #endif
 
 constexpr std::chrono::seconds kConfigUpdateIntervalSecs(300);
@@ -154,9 +153,8 @@ void ConfigLoader::startThread() {
     // Create default base config here - at this point static initializers
     // of extensions should have run and registered all config feature factories
     std::lock_guard<std::mutex> lock(configLock_);
-    if (!config_) {
-      config_ = std::make_unique<Config>();
-    }
+    config_ = std::make_unique<Config>();
+
     updateThread_ =
         std::make_unique<std::thread>(&ConfigLoader::updateConfigThread, this);
   }
@@ -183,9 +181,9 @@ void ConfigLoader::handleOnDemandSignal() {
 
 const char* ConfigLoader::configFileName() {
   if (!configFileName_) {
-    configFileName_ = getenv(kConfigFileEnvVar);
+    configFileName_ = getenv(kConfigFileEnvVar.data());
     if (configFileName_ == nullptr) {
-      configFileName_ = kConfigFile;
+      configFileName_ = kConfigFile.data();
     }
   }
   return configFileName_;
@@ -224,10 +222,9 @@ void ConfigLoader::configureFromSignal(
     time_point<system_clock> now,
     Config& config) {
   LOG(INFO) << "Received on-demand profiling signal, "
-            << "reading config from " << kOnDemandConfigFile;
-  // Reset start time to 0 in order to compute new default start time
-  const std::string config_str = "PROFILE_START_TIME=0\n"
-      + readConfigFromConfigFile(kOnDemandConfigFile);
+            << "reading config from " << kOnDemandConfigFile.data();
+  const std::string config_str =
+      readConfigFromConfigFile(kOnDemandConfigFile.data());
   config.parse(config_str);
   config.setSignalDefaults();
   notifyHandlers(config);

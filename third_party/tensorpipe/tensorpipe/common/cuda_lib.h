@@ -33,13 +33,6 @@
 
 namespace tensorpipe {
 
-class NoDevicesError final : public BaseError {
- public:
-  std::string what() const override {
-    return "The CUDA driver failed to init because it didn't find any device";
-  }
-};
-
 // Master list of all symbols we care about from libcuda.
 
 #define TP_FORALL_CUDA_SYMBOLS(_)                               \
@@ -121,14 +114,7 @@ class CudaLib {
   }
     TP_FORALL_CUDA_SYMBOLS(TP_LOAD_SYMBOL)
 #undef TP_LOAD_SYMBOL
-    CUresult result = lib.init(0);
-    // If the driver doesn't find any devices it fails to init (beats me why)
-    // but we must support this case, by disabling the channels, rather than
-    // throwing. Hence we treat it as if we couldn't find the driver.
-    if (result == CUDA_ERROR_NO_DEVICE) {
-      return std::make_tuple(TP_CREATE_ERROR(NoDevicesError), CudaLib());
-    }
-    TP_CUDA_DRIVER_CHECK(lib, result);
+    TP_CUDA_DRIVER_CHECK(lib, lib.init(0));
     return std::make_tuple(Error::kSuccess, std::move(lib));
   }
 

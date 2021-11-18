@@ -56,8 +56,8 @@ namespace internal {
 // message type does not get linked into the binary.
 class PROTOBUF_EXPORT ImplicitWeakMessage : public MessageLite {
  public:
-  ImplicitWeakMessage() {}
-  explicit ImplicitWeakMessage(Arena* arena) : MessageLite(arena) {}
+  ImplicitWeakMessage() : arena_(NULL) {}
+  explicit ImplicitWeakMessage(Arena* arena) : arena_(arena) {}
 
   static const ImplicitWeakMessage* default_instance();
 
@@ -67,6 +67,8 @@ class PROTOBUF_EXPORT ImplicitWeakMessage : public MessageLite {
   MessageLite* New(Arena* arena) const override {
     return Arena::CreateMessage<ImplicitWeakMessage>(arena);
   }
+
+  Arena* GetArena() const override { return arena_; }
 
   void Clear() override { data_.clear(); }
 
@@ -91,6 +93,7 @@ class PROTOBUF_EXPORT ImplicitWeakMessage : public MessageLite {
   typedef void InternalArenaConstructable_;
 
  private:
+  Arena* const arena_;
   std::string data_;
   GOOGLE_DISALLOW_EVIL_CONSTRUCTORS(ImplicitWeakMessage);
 };
@@ -100,7 +103,7 @@ template <typename ImplicitWeakType>
 class ImplicitWeakTypeHandler {
  public:
   typedef MessageLite Type;
-  static constexpr bool Moveable = false;
+  static const bool Moveable = false;
 
   static inline MessageLite* NewFromPrototype(const MessageLite* prototype,
                                               Arena* arena = NULL) {

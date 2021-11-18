@@ -27,15 +27,13 @@ class Dropout_11_12 final : public Adapter {
       t_ratio.elem_type() = TensorProto_DataType_FLOAT;
       auto& data_ratio = t_ratio.floats();
       data_ratio.emplace_back(ratio);
-      Node* constant = graph->create(kConstant);
-      constant->insertBefore(node);
-      constant->t_(kvalue, t_ratio);        
-      node->addInput(constant->output());
+      Value* v_ratio;
+      v_ratio = graph->addInitializerAndInput(t_ratio);
+      node->addInput(v_ratio);
     }
 
-    Node* adapt(std::shared_ptr<Graph> graph, Node* node) const override {
+    void adapt(std::shared_ptr<Graph> graph, Node* node) const override {
 	    adapt_dropout_11_12(graph, node);
-      return node;
     }
 };
 
