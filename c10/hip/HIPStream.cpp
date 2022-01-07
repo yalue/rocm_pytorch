@@ -8,6 +8,7 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <map>
 #include <mutex>
 #include <vector>
 
@@ -41,7 +42,13 @@ struct LeakyStreamInternals {
 // Global stream state and constants
 static DeviceIndex num_gpus = -1;
 static constexpr int kStreamsPerPoolBits = 5;
-static constexpr int kStreamsPerPool = 1 << kStreamsPerPoolBits;
+// Change from the default behavior: ROCm *really* doesn't like using
+// large numbers of streams; in fact anything over 4 is basically pointless,
+// since ROCm internally multiplexes streams onto a small number of HW queues.
+// (By default, this is governed by the GPU_MAX_HW_QUEUES variable in ROCclr
+// code... defaulting to 4).
+// static constexpr int kStreamsPerPool = 1 << kStreamsPerPoolBits;
+static constexpr int kStreamsPerPool = 1;
 static constexpr unsigned int kDefaultFlags = hipStreamNonBlocking;
 static constexpr int kStreamTypeBits = 3;
 
@@ -71,6 +78,9 @@ static std::array<LeakyStreamInternals, kStreamsPerPool>
     low_priority_streams[C10_COMPILE_TIME_MAX_GPUS];
 static std::array<LeakyStreamInternals, kStreamsPerPool>
     high_priority_streams[C10_COMPILE_TIME_MAX_GPUS];
+
+static std::map<StreamId, LeakyStreamInternals*> external_streams;
+static std::mutex external_streams_lock;
 
 // Note [StreamId assignment]
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -193,6 +203,11 @@ static StreamId HIPStream_getStreamId(const LeakyStreamInternals* ptr) {
         StreamIdType::HIGH, ptr - high_priority_streams[device_index].data());
   }
 
+  // External stream IDs are just the casted.
+  if (ptr->stream) {
+    return reinterpret_cast<StreamId>(ptr->stream);
+  }
+
   TORCH_INTERNAL_ASSERT(
       0,
       "Could not compute stream ID for ",
@@ -280,6 +295,22 @@ static uint32_t get_idx(std::atomic<uint32_t>& counter) {
   return raw_idx % kStreamsPerPool;
 }
 
+static LeakyStreamInternals* getOrAddExternalStreamInternals(HIPStream s) {
+  StreamId id = s.unwrap().id();
+  external_streams_lock.lock();
+  auto existing = external_streams.find(id);
+  if (existing != external_streams.end()) {
+    external_streams_lock.unlock();
+    return existing->second;
+  }
+  auto to_return = new LeakyStreamInternals();
+  to_return->device_index = s.device_index();
+  to_return->stream = reinterpret_cast<hipStream_t>(id);
+  external_streams[id] = to_return;
+  external_streams_lock.unlock();
+  return to_return;
+}
+
 // See Note [StreamId assignment]
 LeakyStreamInternals* HIPStream_internals(HIPStream s) {
   c10::DeviceIndex device_index = s.device_index();
@@ -301,6 +332,8 @@ LeakyStreamInternals* HIPStream_internals(HIPStream s) {
       return &low_priority_streams[device_index][si];
     case StreamIdType::HIGH:
       return &high_priority_streams[device_index][si];
+    case StreamIdType::EXT:
+      return getOrAddExternalStreamInternals(s);
     default:
       TORCH_INTERNAL_ASSERT(
           0,
